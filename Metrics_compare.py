@@ -7,9 +7,9 @@ Compare two text files and write a text report of differences.
 # =========================
 # CONFIG — EDIT THESE FIRST
 # =========================
-FILE_A = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\CANYCOLO_2025\MetricsComp\METRICS_2025_CANYCOLO_AMTonly.txt"        # Path to first file
-FILE_B = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\CANYCOLO_2025\MetricsComp\METRICS_2025_CANYCOLO_py_max_wind.txt"        # Path to second file
-OUTPUT_REPORT = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\CANYCOLO_2025\MetricsComp\AMT_PY_max_wind_diff_report_side_by_side.txt"  # Path for the output report
+FILE_A = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\TIMU\GENERATED\METRICS_2026_TIMU002_AMT.txt"        # Path to first file
+FILE_B = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\TIMU\GENERATED\METRICS_2026_TIMU002_PY.txt"        # Path to second file
+OUTPUT_REPORT = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\TIMU\Metrics_AMT_py_diff_report_sidebyside.txt"  # Path for the output report
 
 # Diff style options: "unified" | "context" | "ndiff" | "side_by_side"
 DIFF_STYLE = "side_by_side"

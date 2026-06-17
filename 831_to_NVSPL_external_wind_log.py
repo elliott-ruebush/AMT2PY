@@ -36,8 +36,8 @@ except Exception:
     csv.field_size_limit(2_147_483_647)
 
 # --- USER CONFIGURATION (edit these as needed) ---
-INPUT_PATH = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\CANYCOLO_2025\Python_Process\SPL"
-OUTPUT_PATH = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\CANYCOLO_2025\Python_Process\Python_no_wind\NVSPL"
+INPUT_PATH = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\TIMU\SPL"
+OUTPUT_PATH = r"C:\Users\Emeyer\OneDrive - DOI\Desktop\DesktopTemp\NSNSD\Projects\CS_Py\TEST\TIMU\NVSPL"
 CREATE_SITE_FOLDERS = False   # per-site subfolders
 RECURSIVE = False             # recurse subfolders for .831
 
