@@ -9,8 +9,8 @@ import pandas as pd
 from tkinter import filedialog, Tk
 
 # ---------- USER INPUT ----------
-sitename = "SAGU017"
-deploy = "20260410"
+sitename = "MORUA2503"
+deploy = "20260626"
 # --------------------------------
 
 # Tkinter: open file picker without showing the root window

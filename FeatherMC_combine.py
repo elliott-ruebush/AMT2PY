@@ -9,9 +9,9 @@ from tkinter import Tk, filedialog, Toplevel, StringVar, BooleanVar
 from tkinter import ttk
 
 # ---------------- USER INPUT (defaults; can be overridden by the picker) ----------------
-site_name = "SAGU016"
-deploy = "20260410"
-serial = "00000013"
+site_name = "MORUA2503"
+deploy = "20260626"
+serial = "00000018"
 
 # Default time zone & DST handling — the picker will let you change these interactively
 deploy_tzone = "America/Denver"

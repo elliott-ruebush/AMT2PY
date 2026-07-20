@@ -19,13 +19,13 @@ import os, csv, math, re, io, bisect
 from datetime import datetime, timedelta
 
 # ========= USER SETTINGS =========
-INPUT_CSV = r"E:\SAGU\SAGU016_20260410\RAW\SAGU016_821SE 40181-260503000-122148_Time History.csv"
-OUTPUT_DIR = r"E:\SAGU\SAGU016_20260410\NVSPL"
-SITE_ID = "SAGU016"
+INPUT_CSV = r"E:\TARs\MORU\MORUA2503_BreezyPoint_20260626\RAW\MORUA2503_821SE 40362-260702000-131159_Time History.csv"
+OUTPUT_DIR = r"E:\TARs\MORU\MORUA2503_BreezyPoint_20260626\NVSPL"
+SITE_ID = "MORUA2503"
 
 # --- MET merge controls (robust) ---
 MERGE_MET = True
-MET_CSV_PATH = r"E:\SAGU\SAGU016_20260410\MET\00000013 2026-05-12 091822.csv"
+MET_CSV_PATH = r"E:\TARs\MORU\MORUA2503_BreezyPoint_20260626\MET\00000018 2026-07-09 125259.csv"
 
 # If any of these are None, auto-detection will infer them from header/data:
 MET_TIMESTAMP_IDX = 5   # single timestamp column (0-based) if known
