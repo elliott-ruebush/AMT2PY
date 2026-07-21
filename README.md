@@ -1,6 +1,6 @@
 # Mirrored NSNSD Acoustic Monitoring Toolbox (AMT)
 
-This repository mirrors the **NSNSD Acoustic Monitoring Toolbox (AMT)** — originally a C++ executable used to process, visualize, and summarize acoustic data. Due to loss of in‑house C++ expertise, this project ports core AMT workflows to **Python**, enabling easier maintenance, extension, and integration with modern data pipelines.
+This repository mirrors the **NSNSD Acoustic Monitoring Toolbox (AMT)** — originally a C# executable used to process, visualize, and summarize acoustic data. Due to loss of in‑house C# expertise, this project ports core AMT workflows to **Python**, enabling easier maintenance, extension, and integration with modern data pipelines.
 
 NOTE: This mostly replaces Type1-821envtools repository `https://github.com/emeyer34/Type1-821envtools` because that toolbox was meant to transition 821 and hobo data into AMT, which required several slight changes in formatting of raw data prior to AMT injestion. The AMT2PY makes this obsolute due to 1.) addressing NVSPL creation in python instead of AMT; and 2.) adopting a more flexible wind data injestion (time step and formatting) in python.
 
@@ -195,7 +195,7 @@ MET_CSV_PATH = "path/to/met.csv"
 
 # Why Python?
 
-- Easier to maintain than C++
+- Easier to maintain than C#
 - Transparent, readable workflows
 - Simple extensibility for future NSNSD metadata, QA/QC tools, and automated reporting
 - Compatible with scientific computing tools and Jupyter workflows
@@ -204,5 +204,5 @@ MET_CSV_PATH = "path/to/met.csv"
 
 # Acknowledgments
 
-- Original **AMT C++** implementation
+- Original **AMT C#** implementation
 - Larson Davis **LD831/LD821** data specifications
