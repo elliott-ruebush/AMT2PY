@@ -7,13 +7,13 @@ Data download process for Type 1 821-env systems
 - Before downloading and placing data into the respective folders, ensure that the serial numbers of the equipment match the data sheet serial numbers.
 - Data should be stored as follows:
 - Highest level: Deployment folder in SITE000_YYYYMMDD
-- Next level: AUDIO, MET, METADATA, SPL
-- Data process: Song Meter files go to AUDIO, wind data logger microSD goes to MET, data sheets and images go to METADATA, and LD 821env SPL meter data goes to SPL.
+- Next level: AUDIO, MET, METADATA, RAW
+- Data process: Song Meter files go to AUDIO, wind data logger microSD goes to MET, data sheets and images go to METADATA, and LD 821env SPL meter data goes to RAW.
 - Data Logger Card (microSD)The data logger is in the white plastic box with the NSNSD logo and records data from the wind sensor.
 - Check the serial number under the white lid and make sure it matches the data sheet.
 
 ## Data Logger (microSD)
-- Insert the microSD card into the microSDtoUSB adapter and navigate to the card in Windows Explorer.
+- Insert the microSD card into the microSD-to-USB adapter and navigate to the card in Windows Explorer.
 - Select all files (MD files and datestamped CSVs).
 - Copy all files to the MET subfolder within the deployment folder (NOTE: ensure you are in the correct folder by matching it to the datasheet).
 - Confirm that all files copied from the microSD card by comparing the number of files in each location (copiedto and copiedfrom).
@@ -31,11 +31,12 @@ Data download process for Type 1 821-env systems
 - Place the SD card back into the same Song Meter so it is ready for the next deployment.
 - Ensure that the Song Meter is still turned off.
 - Larson Davis Unit
-- Sound Level Meter (LD 821env) Download InstructionsThis is the sound level meter and must be disconnected from the power source, the microphone cable, and the battery secure plate.
-- Connect the 821env SPL meter to the computer using a USBC cable.
-- Open G4 LD Utility.
+- 
 
 ## Larson Davis 821-env SPL Meter Download
+- This is the sound level meter and must be disconnected from the power source, the microphone cable, and the battery secure plate.
+- Connect the 821env SPL meter to the computer using a USBC cable.
+- Open G4 LD Utility.
 - Doubleclick on the serial number of the appropriate unit.
 - A new window will appear with all stored data on the unit. Find the deployment by matching the date in the list of files. It will likely be the first selection.
 - Click the checkbox next to the date/file in the primary pane.
@@ -45,9 +46,9 @@ Data download process for Type 1 821-env systems
 - When finished, go to the main menu, select the “File” dropdown, and click “Export to CSV.” After some time, a popup will appear indicating that the files have downloaded, along with the file location. You have two options:a. Select OK and manually navigate to:C:\Users\Public\Documents\PCB Piezotronics\G4\Metersorb. In the popup, select View Location, which will take you directly to the data.
 - Once at the download location, ensure you find the serial number and deployment date for the meter and the data of interest. This can become confusing as you download more data because G4 saves all downloads here by serial number and deployment date.
 - After confirming the correct data, select the folder and ensure it contains the following files: OBA, Session Log, Settings, Summary, and Time History files. Time History files will have a numerical suffix for longer deployments—expect up to three Time History files for a 30day deployment.
-- Copy the folder containing all CSVs and paste it into the SPL folder of the appropriate deployment.
-- Serial Number: All unit downloads for each respective unit will be in hereSerial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the SPL folderSerial Number: All unit downloads for each respective unit will be in hereSerial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the SPL folder
+- Copy the folder containing all CSVs and paste it into the RAW folder of the appropriate deployment.
+- Serial Number: All unit downloads for each respective unit will be in hereSerial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the RAW folderSerial Number: All unit downloads for each respective unit will be in hereSerial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the SPL folder
 - Serial Number: All unit downloads for each respective unit will be in here
-- Serial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the SPL folder
+- Serial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the RAW folder
 - Serial Number: All unit downloads for each respective unit will be in here
-- Serial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the SPL folder
+- Serial Number and deployment date: All deployment downloads for the serial number will be in here. Copy this entire folder in the RAW folder
