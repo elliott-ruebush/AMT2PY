@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import logging
 from logging import Formatter, StreamHandler, FileHandler
@@ -5,29 +6,10 @@ from datetime import datetime
 
 import pandas as pd
 import pytz
-from tkinter import Tk, filedialog, Toplevel, StringVar, BooleanVar
-from tkinter import ttk
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 
-# ---------------- USER INPUT (defaults; can be overridden by the picker) ----------------
-site_name = "MORUA2503"
-deploy = "20260626"
-serial = "00000018"
-
-# Default time zone & DST handling — the picker will let you change these interactively
-deploy_tzone = "America/Denver"
-adjust_for_dst = False  # True = apply DST; False = use fixed standard offset
-# ---------------------------------------------------------------------------------------
-
-
-def select_met_files():
-    root = Tk()
-    root.withdraw()
-    file_paths = filedialog.askopenfilenames(
-        title="Select wind CSV files (exclude MD files)",
-        filetypes=[("CSV files", "*.csv")]
-    )
-    return list(file_paths)
-
+# Timezone definitions
 COMMON_TZS = [
     "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
     "America/Phoenix", "America/Anchorage", "America/Honolulu",
@@ -35,56 +17,46 @@ COMMON_TZS = [
     "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
 ]
 
-def pick_timezone(default_tz: str = "America/Denver", default_dst: bool = True):
-    try:
-        all_tzs = [tz for tz in pytz.all_timezones if tz not in COMMON_TZS]
-        tz_list = COMMON_TZS + all_tzs
-    except Exception:
-        tz_list = COMMON_TZS
+try:
+    all_tzs = [tz for tz in pytz.all_timezones if tz not in COMMON_TZS]
+    TIMEZONE_LIST = COMMON_TZS + all_tzs
+except Exception:
+    TIMEZONE_LIST = COMMON_TZS
 
-    dlg = Toplevel()
-    dlg.title("Select Time Zone")
-    dlg.geometry("460x200")
-    dlg.resizable(False, False)
-    dlg.grab_set()
+# ------------------------------------------------------------------------------
+# ToolTip Helper
+# ------------------------------------------------------------------------------
+class ToolTip:
+    """Helper to display hover tooltips for UI widgets."""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
 
-    tz_var = StringVar(value=default_tz)
-    dst_var = BooleanVar(value=default_dst)
-    result = {"tz": None, "dst": None}
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#ffffe0",
+                         relief=tk.SOLID, borderwidth=1, font=("tahoma", "8", "normal"))
+        label.pack(ipadx=1)
 
-    ttk.Label(dlg, text="Time Zone:", font=("Segoe UI", 10, "bold")).pack(pady=(12, 4))
-    tz_combo = ttk.Combobox(dlg, textvariable=tz_var, values=tz_list, width=52, state="readonly")
-    tz_combo.pack(pady=2)
-    tz_combo.set(default_tz if default_tz in tz_list else tz_list[0])
+    def hide_tip(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
 
-    ttk.Label(dlg, text="DST handling:", font=("Segoe UI", 10, "bold")).pack(pady=(10, 2))
-    dst_check = ttk.Checkbutton(
-        dlg,
-        text="Apply local DST rules (unchecked = fixed standard-time offset)",
-        variable=dst_var
-    )
-    dst_check.pack()
-
-    btn_frame = ttk.Frame(dlg)
-    btn_frame.pack(pady=16)
-
-    def on_ok():
-        result["tz"] = tz_var.get()
-        result["dst"] = dst_var.get()
-        dlg.destroy()
-
-    def on_cancel():
-        result["tz"] = None
-        result["dst"] = None
-        dlg.destroy()
-
-    ttk.Button(btn_frame, text="OK", command=on_ok).pack(side="left", padx=8)
-    ttk.Button(btn_frame, text="Cancel", command=on_cancel).pack(side="left", padx=8)
-
-    dlg.wait_window()
-    return result["tz"], result["dst"]
-
-def setup_logger(output_dir: str) -> logging.Logger:
+# ------------------------------------------------------------------------------
+# Core Processing Functions
+# ------------------------------------------------------------------------------
+def setup_logger(output_dir: str, site_name: str, deploy: str, serial: str) -> logging.Logger:
     log_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = os.path.join(output_dir, f"feathermc_clean_{log_ts}.log")
 
@@ -109,7 +81,7 @@ def setup_logger(output_dir: str) -> logging.Logger:
 
 def read_and_combine_files(file_paths, logger: logging.Logger) -> pd.DataFrame:
     if not file_paths:
-        raise SystemExit("No files were selected.")
+        raise ValueError("No files were selected.")
 
     logger.info(f"Total files selected: {len(file_paths)}")
     for f in file_paths:
@@ -131,7 +103,6 @@ def read_and_combine_files(file_paths, logger: logging.Logger) -> pd.DataFrame:
 
 def clean_repeated_headers(df: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
     before = len(df)
-    # Remove rows where '#' is not numeric (these are repeated headers or corrupt rows)
     df_clean = df[pd.to_numeric(df['#'], errors='coerce').notnull()].copy()
     after = len(df_clean)
     removed = before - after
@@ -156,10 +127,8 @@ def convert_utc_to_local(utc_series: pd.Series, tz_name: str, adjust_dst: bool, 
     return local_times, tz_abbr
 
 def clean_and_format_data(df: pd.DataFrame, tz: str, adjust_dst: bool, logger: logging.Logger) -> pd.DataFrame:
-    # Remove repeated headers
     df = clean_repeated_headers(df, logger)
 
-    # Parse UTC column
     if 'Date-Time (UTC)' not in df.columns:
         msg = "Required column 'Date-Time (UTC)' not found."
         logger.error(msg)
@@ -171,7 +140,6 @@ def clean_and_format_data(df: pd.DataFrame, tz: str, adjust_dst: bool, logger: l
         logger.info(f"Rows with non-parsable UTC timestamps: {nat_before}")
     df = df.dropna(subset=['UTC']).copy()
 
-    # Convert UTC -> Local
     local_time, tz_abbr = convert_utc_to_local(df['UTC'], tz, adjust_dst, logger)
     df['Date-Time (LOC)'] = local_time.dt.strftime('%m/%d/%Y %H:%M:%S')
     df['Time Zone'] = tz_abbr
@@ -179,11 +147,9 @@ def clean_and_format_data(df: pd.DataFrame, tz: str, adjust_dst: bool, logger: l
     unique_abbr = pd.Series(tz_abbr).unique().tolist()
     logger.info(f"Time zone abbreviations present after conversion: {unique_abbr}")
 
-    # Ensure numeric types for '#' if present
     if '#' in df.columns:
         df['#'] = pd.to_numeric(df['#'], errors='coerce')
 
-    # Sort by local time
     df['_loc_dt'] = pd.to_datetime(df['Date-Time (LOC)'], format='%m/%d/%Y %H:%M:%S', errors='coerce')
     nat_loc = df['_loc_dt'].isna().sum()
     if nat_loc:
@@ -192,7 +158,6 @@ def clean_and_format_data(df: pd.DataFrame, tz: str, adjust_dst: bool, logger: l
     df = df.sort_values(by='_loc_dt', kind='stable').drop(columns=['_loc_dt']).reset_index(drop=True)
     logger.info("Data sorted by 'Date-Time (LOC)'.")
 
-    # Log first/last local times
     if len(df) > 0:
         logger.info(f"First local time: {df['Date-Time (LOC)'].iloc[0]} | "
                     f"Last local time: {df['Date-Time (LOC)'].iloc[-1]}")
@@ -210,26 +175,147 @@ def export_data(df: pd.DataFrame, file_paths, serial: str, logger: logging.Logge
     logger.info(f"All columns written to output: {list(df.columns)}")
     logger.info(f"Output written: {output_path}")
     logger.info("----- FeatherMC wind clean prep run completed -----")
-    print(f"Exported to:\n{output_path}")
+    return output_path
 
+# ------------------------------------------------------------------------------
+# Main Application GUI
+# ------------------------------------------------------------------------------
+class FeatherMCApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("FeatherMC Wind Data Combination Tool")
+        self.geometry("560x600")
+        self.resizable(True, True)
+
+        self.selected_files = []
+        self._build_gui()
+
+    def _build_gui(self):
+        main_frame = ttk.Frame(self, padding="12")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # --- File Selector Group ---
+        grp_files = ttk.LabelFrame(main_frame, text=" Met File Selector ", padding="10")
+        grp_files.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        btn_browse = ttk.Button(grp_files, text="Select Wind CSV Files...", command=self.browse_files)
+        btn_browse.pack(anchor="w", pady=(0, 5))
+
+        self.lbl_file_count = ttk.Label(grp_files, text="No files selected", font=("Segoe UI", 9, "italic"))
+        self.lbl_file_count.pack(anchor="w", pady=(0, 2))
+
+        # Listbox to display selected file paths
+        list_frame = ttk.Frame(grp_files)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.lst_files = tk.Listbox(list_frame, height=5, selectmode=tk.EXTENDED)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.lst_files.yview)
+        self.lst_files.configure(yscrollcommand=scrollbar.set)
+
+        self.lst_files.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # --- User Input & Metadata Group ---
+        grp_meta = ttk.LabelFrame(main_frame, text=" Site & Deployment Settings ", padding="10")
+        grp_meta.pack(fill=tk.X, pady=5)
+
+        # site_name
+        lbl_site = ttk.Label(grp_meta, text="Site Name:", width=18, anchor="w")
+        lbl_site.grid(row=0, column=0, sticky="w", pady=4)
+        self.var_site_name = tk.StringVar(value="PARK001")
+        ent_site = ttk.Entry(grp_meta, textvariable=self.var_site_name)
+        ent_site.grid(row=0, column=1, sticky="ew", padx=5, pady=4)
+        grp_meta.columnconfigure(1, weight=1)
+        hint_site = "Alpha numeric park code and site number"
+        ToolTip(ent_site, hint_site)
+        ToolTip(lbl_site, hint_site)
+
+        # deploy
+        lbl_deploy = ttk.Label(grp_meta, text="Deploy Date:", width=18, anchor="w")
+        lbl_deploy.grid(row=1, column=0, sticky="w", pady=4)
+        self.var_deploy = tk.StringVar(value="20260101")
+        ent_deploy = ttk.Entry(grp_meta, textvariable=self.var_deploy)
+        ent_deploy.grid(row=1, column=1, sticky="ew", padx=5, pady=4)
+        hint_deploy = "YYYYMMDD"
+        ToolTip(ent_deploy, hint_deploy)
+        ToolTip(lbl_deploy, hint_deploy)
+
+        # serial
+        lbl_serial = ttk.Label(grp_meta, text="Serial Number:", width=18, anchor="w")
+        lbl_serial.grid(row=2, column=0, sticky="w", pady=4)
+        self.var_serial = tk.StringVar(value="00000018")
+        ent_serial = ttk.Entry(grp_meta, textvariable=self.var_serial)
+        ent_serial.grid(row=2, column=1, sticky="ew", padx=5, pady=4)
+        hint_serial = "Located in metadata files"
+        ToolTip(ent_serial, hint_serial)
+        ToolTip(lbl_serial, hint_serial)
+
+        # --- Timezone & DST Group ---
+        grp_tz = ttk.LabelFrame(main_frame, text=" Time Zone & DST Handling ", padding="10")
+        grp_tz.pack(fill=tk.X, pady=5)
+
+        lbl_tz = ttk.Label(grp_tz, text="Time Zone:", width=18, anchor="w")
+        lbl_tz.grid(row=0, column=0, sticky="w", pady=4)
+        self.var_tzone = tk.StringVar(value="America/Denver")
+        cmb_tz = ttk.Combobox(grp_tz, textvariable=self.var_tzone, values=TIMEZONE_LIST, state="readonly")
+        cmb_tz.grid(row=0, column=1, sticky="ew", padx=5, pady=4)
+        grp_tz.columnconfigure(1, weight=1)
+
+        self.var_dst = tk.BooleanVar(value=False)
+        chk_dst = ttk.Checkbutton(
+            grp_tz,
+            text="Adjust for DST (apply local DST rules vs fixed standard offset)",
+            variable=self.var_dst
+        )
+        chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        # --- Action Button ---
+        btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
+        btn_run.pack(fill=tk.X, pady=12)
+
+    def browse_files(self):
+        file_paths = filedialog.askopenfilenames(
+            title="Select wind CSV files (exclude MD files)",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if file_paths:
+            self.selected_files = list(file_paths)
+            self.lst_files.delete(0, tk.END)
+            for f in self.selected_files:
+                self.lst_files.insert(tk.END, os.path.basename(f))
+            self.lbl_file_count.config(text=f"{len(self.selected_files)} file(s) selected")
+
+    def run_process(self):
+        if not self.selected_files:
+            messagebox.showwarning("Selection Missing", "Please select met data CSV files first.")
+            return
+
+        site_name = self.var_site_name.get().strip()
+        deploy = self.var_deploy.get().strip()
+        serial = self.var_serial.get().strip()
+        deploy_tzone = self.var_tzone.get().strip()
+        adjust_for_dst = self.var_dst.get()
+
+        output_dir_for_logs = os.path.dirname(self.selected_files[0])
+
+        try:
+            logger = setup_logger(output_dir_for_logs, site_name, deploy, serial)
+            logger.info(f"Time zone selected: {deploy_tzone} | adjust_for_dst={adjust_for_dst}")
+
+            raw_data = read_and_combine_files(self.selected_files, logger)
+            clean_data = clean_and_format_data(raw_data, deploy_tzone, adjust_for_dst, logger)
+            output_path = export_data(clean_data, self.selected_files, serial, logger)
+
+            messagebox.showinfo(
+                "Processing Complete",
+                f"Successfully combined {len(self.selected_files)} file(s).\n\nOutput saved to:\n{output_path}"
+            )
+        except Exception as e:
+            messagebox.showerror("Execution Error", f"An error occurred while processing files:\n{e}")
+
+# ------------------------------------------------------------------------------
+# Entry Point
+# ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    file_paths = select_met_files()
-    if not file_paths:
-        raise SystemExit("No files were selected.")
-
-    output_dir_for_logs = os.path.dirname(file_paths[0])
-    logger = setup_logger(output_dir_for_logs)
-
-    sel_tz, sel_dst = pick_timezone(default_tz=deploy_tzone, default_dst=adjust_for_dst)
-    if sel_tz is None:
-        logger.info("User cancelled time zone selection. Exiting.")
-        raise SystemExit("Time zone selection cancelled.")
-    else:
-        deploy_tzone = sel_tz
-        adjust_for_dst = sel_dst
-        logger.info(f"Time zone selected: {deploy_tzone} | adjust_for_dst={adjust_for_dst}")
-        logger.info("A UTC → local time conversion will be applied based on the selection.")
-
-    raw_data = read_and_combine_files(file_paths, logger)
-    clean_data = clean_and_format_data(raw_data, deploy_tzone, adjust_for_dst, logger)
-    export_data(clean_data, file_paths, serial, logger)
+    app = FeatherMCApp()
+    app.mainloop()
