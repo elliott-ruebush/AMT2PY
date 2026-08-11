@@ -439,6 +439,25 @@ def _norm_temp(val: str) -> str:
     try: return f"{float(str(val).strip()):.1f}"
     except Exception: return ""
 
+def _read_met_csv_header(csv_path: str):
+    """Read only the first non-empty CSV row (for GUI defaults — not full file load)."""
+    enc = _sniff_encoding(csv_path)
+    try:
+        with open(csv_path, "rb") as fb:
+            sample_text = fb.read(65536).decode(enc, errors="replace")
+    except Exception:
+        sample_text = ""
+    delim = _sniff_delimiter(sample_text)
+
+    try:
+        with open(csv_path, "r", encoding=enc, newline="") as f:
+            for row in csv.reader(f, delimiter=delim):
+                if row and any(str(c).strip() for c in row):
+                    return row
+    except Exception:
+        pass
+    return []
+
 def _read_met_data_rows(csv_path: str):
     enc = _sniff_encoding(csv_path)
     sample_bytes = b""
@@ -801,10 +820,10 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
     def _apply_met_csv_defaults(self, csv_path):
         """Fill MET column indices from FeatherMC combined CSV header."""
         try:
-            rows = _read_met_data_rows(csv_path)
-            if not rows:
+            header = _read_met_csv_header(csv_path)
+            if not header:
                 return
-            inferred = infer_met_gui_indices(rows[0])
+            inferred = infer_met_gui_indices(header)
             for key, value in inferred.items():
                 if key in self.vars and value:
                     self.vars[key].set(value)
