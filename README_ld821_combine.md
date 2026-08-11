@@ -39,7 +39,7 @@ See `schemas/ld821_spl.py` for the full column contract used by `ld821_to_nvspl.
 ## Usage
 
 1. Run `python ld821_combine.py`
-2. Browse to your RAW (or SPL data) folder
+2. Browse to your RAW folder (folder containing G4 Time History CSVs)
 3. Enter **Site Name** — used in the output filename (e.g. `DENATRLA_Time History.csv`)
 4. Run combine
 

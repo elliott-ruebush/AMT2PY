@@ -18,19 +18,11 @@ A Python command-line tool that **discovers logger subfolders**, **merges** `Ove
 
 ## Installation
 
-This tool uses **only Python’s standard library**—no external dependencies.
+Uses **only Python’s standard library** — no extra packages. Clone and venv setup: **`README.md`** → *Prepare Your Machine* (skip `pip install` if you are only running 831 scripts).
 
 ```bash
-# Recommended: Python 3.9+
-python --version
-
-# Clone your repo (example)
-git clone https://github.com/<your-org-or-user>/<your-repo>.git
-cd <your-repo>
+python --version   # 3.9+
 ```
-
-> **Python version:** 3.9+  
-> **Dependencies:** None beyond Python standard library.
 
 ---
 
@@ -98,7 +90,7 @@ Original WinForms C# utility (`LD831Renamer.cs`) that inspired this Python port.
 
 ### Public domain
 
-This project is in the worldwide [public domain](LICENSE.md):
+This project is in the worldwide public domain:
 
 > This project is in the public domain within the United States,
 > and copyright and related rights in the work worldwide are waived through the

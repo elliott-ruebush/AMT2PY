@@ -1,47 +1,10 @@
 # LD 821-ENV processing
 
-Python scripts that take G4-exported Time History CSVs (and optional Feather MC wind data) and produce hourly NVSPL files for AMT. All three processing scripts open a GUI — there is nothing to edit in the source code before running.
+G4 Time History CSVs (+ optional Feather MC wind) → hourly **NVSPL** for AMT. Three **GUI** scripts; setup is in **`README.md`** → *Prepare your machine*.
 
-## Setup
-
-Python 3.9 or newer. Clone this repo, then create a virtual environment and install dependencies:
-
-```bash
-cd AMT2PY
-python -m venv .venv
-```
-
-Activate it:
-
-```bash
-# Windows Command Prompt
-.venv\Scripts\activate
-
-# Git Bash (Windows)
-source .venv/Scripts/activate
-
-# macOS / Linux
-source .venv/bin/activate
-```
-
-Then install packages:
-
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-Run the scripts from the repo folder with the venv active. On Windows, Git Bash or Command Prompt both work:
-
-```bash
-python ld821_combine.py
-python FeatherMC_combine.py
-python ld821_to_nvspl.py
-```
+Per-script reference: [`README_ld821_combine.md`](README_ld821_combine.md), [`README_FeatherMC_combine.md`](README_FeatherMC_combine.md), [`README_ld821_to_nvspl.md`](README_ld821_to_nvspl.md).
 
 ## Folder layout
-
-Organize each deployment like this before processing:
 
 ```
 MORUA2503_20260626/
@@ -51,25 +14,15 @@ MORUA2503_20260626/
 └── RAW/        G4 export folder(s) with Time History CSVs
 ```
 
-Site name and deploy date in the folder name should match what you enter in the scripts, when applicable. Folder layouts vary — e.g. `2026 DENATRLA Triple Lakes\01 DATA\MET` is fine; scripts log the folder path you selected.
+Site name in the folder name should match what you enter in the scripts when applicable. Nested paths are fine (e.g. `2026 DENATRLA Triple Lakes\01 DATA\MET`); scripts use the folder you browse to.
 
 ## Step 0 — Download field data
 
-**Feather MC (wind logger)**  
-Copy all `.csv` and `.md` files from the microSD card into `MET/`. Verify file counts match, then clear the card and put it back in the logger.
+Full SOP: **`README_DataDownload.md`**. Summary:
 
-**Song Meter**  
-Copy `.wav` files and summary files into `AUDIO/`. Same verify-and-clear routine.
-
-**821-env SPL meter (G4 Utility)**  
-1. Disconnect power, mic cable, and battery plate. Connect via USB.  
-2. Open G4 LD Utility, select the unit by serial number.  
-3. Download the deployment, then open it and use **File → Export to CSV**.  
-4. Find the export folder (default: `C:\Users\Public\Documents\PCB Piezotronics\G4\Meters\...`).  
-5. Confirm the folder has OBA, Session Log, Settings, Summary, and one or more **Time History** CSVs (long deployments may have `Time History 1.csv`, `Time History 2.csv`, etc.).  
-6. Copy the whole export folder into `RAW/`.
-
-More detail on field download: `README_DataDownload.md` (821 sections; ignore the duplicate/conflicting copy instructions at the bottom — use `RAW/` only).
+- **MET/** — copy Feather MC microSD `.csv` / `.md`; verify counts; clear card.
+- **AUDIO/** — copy Song Meter `.wav` and summary files; verify; clear card.
+- **RAW/** — G4 Utility: download deployment → **File → Export to CSV** → copy the export folder (OBA, Session Log, Settings, Summary, Time History CSVs) into `RAW/`.
 
 ## Step 1 — Combine wind data (optional)
 
@@ -77,13 +30,9 @@ More detail on field download: `README_DataDownload.md` (821 sections; ignore th
 python FeatherMC_combine.py
 ```
 
-1. Browse to your wind data folder (e.g. `01 DATA\MET` or wherever logger CSVs live). Raw logger CSVs are picked automatically; prior combined outputs are skipped.  
-2. Enter site name (optional, for the log), logger serial number, and local timezone. Turn on DST adjustment if needed.  
-3. Run.
+Browse to the MET folder; enter serial, timezone, and optional DST. Prior combined outputs are skipped automatically.
 
-**Output:** one cleaned CSV in `MET/`, named like `00000018 2026-07-09 125259.csv`, plus a log file `feathermc_clean_*.log`.
-
-Skip this step if you are not merging wind into NVSPL.
+**Output:** cleaned CSV in `MET/` (e.g. `00000018 2026-07-09 125259.csv`) and `feathermc_clean_*.log`. Skip if not merging wind into NVSPL.
 
 ## Step 2 — Combine Time History CSVs
 
@@ -91,11 +40,9 @@ Skip this step if you are not merging wind into NVSPL.
 python ld821_combine.py
 ```
 
-1. Browse to your SPL data folder (e.g. `01 DATA\RAW` or wherever G4 Time History CSVs live).  
-2. Enter site name — used in the output filename (e.g. `DENATRLA_Time History.csv`).  
-3. Run.
+Browse to the folder with G4 Time History CSVs (usually `RAW/`). Enter **Site Name** for the output filename.
 
-**Output:** `{site}_Time History.csv` and `combine_slm_*.log` in the folder you browsed to (not inside a subfolder). If files are found in multiple subfolders, you'll be asked to confirm before combining.
+**Output:** `{site}_Time History.csv` and `combine_slm_*.log` in the browsed folder. Multi-subfolder layouts prompt for confirmation before combining.
 
 ## Step 3 — Convert to NVSPL
 
@@ -103,22 +50,20 @@ python ld821_combine.py
 python ld821_to_nvspl.py
 ```
 
-1. **Input CSV:** the combined file from step 2 (`{site}_Time History.csv`). Browsing it autofill **Site ID** from the filename and suggests an **Output** folder (same directory, or `NVSPL/` if that subfolder exists).  
-2. **Output directory:** where you want hourly NVSPL files (e.g. a new `NVSPL/` folder in the deployment).  
-3. **Site ID:** filled automatically when you browse the combined SPL file; should match the site prefix in the filename.  
-4. If merging wind, set **Merge MET Data** to True and browse to the cleaned MET CSV from step 1. Column indices auto-fill from the header (`Date-Time (LOC)` for timestamp, Gust/Spd for wind speed); defaults assume Feather MC layout (speed column 3, `bin` fill, m/s units).
-5. **Fill method:** `bin` repeats each MET sample across its interval; `forward` and `nearest` are alternatives if bin does not look right.  
-6. Run.
+1. Browse to `{site}_Time History.csv` from step 2 — **Site ID** and **Output folder** autofill (`schemas/ld821_spl.py`).
+2. Confirm output directory (e.g. new `NVSPL/` under the deployment).
+3. For wind merge: **Merge MET Data** → `True`, browse the step 1 MET CSV. Column indices autofill from header names (`schemas/feathermc_met.py`). Defaults: `bin` fill, m/s, 10 s Feather MC intervals.
+4. Run. GUI log shows progress and merge stats.
 
-**Output:** one file per hour: `NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt` (3600 one-second rows, 54 columns). Progress and MET merge details appear in the GUI log window.
+**Output:** `NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt` per hour (3600 rows, 54 columns).
 
 ## Step 4 — AMT
 
-Load the NVSPL `.txt` files into the original AMT application for graphing and analysis. These scripts stop at NVSPL creation.
+Load NVSPL `.txt` files into AMT for graphing and analysis.
 
-## Typical order
+## Processing order
 
-Wind combine and SPL combine are independent — either order works, or run them in parallel. NVSPL conversion must come last.
+Steps 1 and 2 are independent (either order or parallel). Step 3 must be last.
 
 ```
 G4 export → RAW/
@@ -132,14 +77,8 @@ MET/ CSVs → FeatherMC_combine.py  →  cleaned MET CSV  (optional)
               AMT
 ```
 
-## Logs and troubleshooting
+## Troubleshooting
 
-Each combine script writes a timestamped log next to its output. If timestamps look wrong in NVSPL, check timezone and DST settings in Feather MC combine before re-running NVSPL. If wind columns are blank, open the MET CSV and confirm the column index numbers in the NVSPL GUI match the actual columns.
-
-## Other docs
-
-| Script | Detail doc |
-|--------|------------|
-| `ld821_combine.py` | `README_ld821_combine.md` |
-| `FeatherMC_combine.py` | `README_FeatherMC_combine.md` |
-| `ld821_to_nvspl.py` | `README_ld821_to_nvspl.md` |
+- **Wrong timestamps in NVSPL** — re-check timezone/DST in Feather MC combine, then re-run NVSPL.
+- **Blank wind columns** — confirm merge is on, MET path is the *combined* CSV, and column indices match the header (re-browse MET file to autofill).
+- **Logs** — each combine script writes a timestamped log next to its output.

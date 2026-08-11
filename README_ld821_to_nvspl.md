@@ -1,18 +1,32 @@
+# LD821 to NVSPL (`ld821_to_nvspl.py`)
 
-# LD821_to_NVSPL Script Documentation (with Diagrams)
+Converts a combined LD821 Time History CSV to hourly **NVSPL** text files (54 columns) and optionally merges Feather MC wind data. The script opens a **Tkinter GUI** — configure fields in the window; there are no constants to edit in the source file.
 
-## Overview
-This script converts LD821 Time History CSV files to standard NVSPL hourly text files (54 columns) and optionally merges MET (wind) data from external data loggers.
+For the full 821 workflow (setup, folder layout, and step order), see **`README_821_Pipeline.md`**. Environment setup (clone, venv, dependencies) is in **`README.md`** → *Prepare Your Machine*.
+
+## Quick start
+
+```bash
+python ld821_to_nvspl.py
+```
+
+1. Browse to the combined SPL CSV from `ld821_combine.py` (e.g. `CARE001_Time History.csv`). **Site ID** and **Output folder** autofill from the filename and path (`schemas/ld821_spl.py`).
+2. Choose or confirm the output directory (e.g. a `NVSPL/` folder under the deployment).
+3. To merge wind: set **Merge MET Data** to `True`, browse to the cleaned MET CSV from `FeatherMC_combine.py`. Column indices autofill from the header (`schemas/feathermc_met.py`).
+4. Click **Run Conversion Process**. Progress and merge details appear in the log window.
+
+**Output:** one file per hour: `NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt` (3600 one-second rows).
 
 ---
-## Workflow Diagram
+
+## Workflow
 
 ```
-LD821 Time History CSV
+Combined Time History CSV  ({site}_Time History.csv)
         |
         v
  +-----------------------+
- |  Parse & Normalize    |  --> Clean SPL dataframe
+ |  Parse & normalize    |  --> one row per second, band levels
  +-----------------------+
         |
         v
@@ -20,170 +34,116 @@ MET CSV (optional)
         |
         v
  +-----------------------+
- |  Timestamp Align      |  --> Match MET samples to SPL seconds
+ |  Timestamp align      |  --> map MET samples to SPL seconds
  +-----------------------+
         |
         v
  +-----------------------+
- |  Merge SPL + MET      |  --> Add windspeed, winddir, temp
+ |  Merge SPL + MET      |  --> WindSpeed, WindDir, TempOut, ...
  +-----------------------+
         |
         v
  +-----------------------+
- | Generate NVSPL Files  |
- | one file per hour     |
+ |  Write hourly NVSPL   |
  +-----------------------+
         |
         v
-NVSPL__YYYY_MM_DD_HH.txt
+NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt
 ```
 
 ---
-## NVSPL Hourly File Structure
 
-```
-+--------------------------------------------------------------+
-| Column Name            | Description                         |
-+--------------------------------------------------------------+
-| SiteID                 | Code for monitoring site            |
-| DateTime               | YYYY-MM-DD HH:MM:SS                 |
-| LAFmax                 | A-weighted SPL                       |
-| LAFmin                 | ... (standard 54-col NVSPL schema)  |
-| WindSpeed              | merged MET data (optional)          |
-| WindDir                | merged MET data (optional)          |
-| TempOut                | merged MET data (optional)          |
-+--------------------------------------------------------------+
-```
+## GUI fields
 
----
-## User Configuration — ld821_to_nvspl.py
+### File paths and site info
 
-### Paths & Site Identity
+| Field | Description |
+|-------|-------------|
+| **Input SPL CSV** | Combined Time History file from step 2 of the pipeline. |
+| **Output Folder** | Directory for hourly `.txt` files. Autofill suggests the SPL file’s folder or an existing `NVSPL/` subfolder. |
+| **Site ID** | Monitoring site code (e.g. `CARE001`). Autofill parses the filename prefix before `_Time History`. |
 
-**INPUT_CSV (string, required)**
-Full path to LD821 Time History CSV.
+### MET (wind) merge
 
-**OUTPUT_DIR (string, required)**
-Folder where hourly NVSPL files will be saved.
+| Field | Description |
+|-------|-------------|
+| **Merge MET Data** | `True` to merge wind (and optional direction/temp) into NVSPL rows. |
+| **MET Data CSV** | Cleaned Feather MC output from `FeatherMC_combine.py`. Browsing autofill column indices and sets merge to `True`. |
+| **Timestamp Col Index** | 0-based column for local timestamp. Autofill: `Date-Time (LOC)`. |
+| **Wind Speed Col Index** | Autofill: `Wind Spd Max` or `Gust m/s`. |
+| **Wind Dir Col Index** | Optional; autofill when a direction column exists in the header. |
+| **Temp Col Index** | Optional external temperature column. |
 
-**SITE_ID (string, required)**
-The monitoring site code.
+### Alignment and units
 
----
-### MET (Wind) Merge Controls
+| Field | Typical value | Notes |
+|-------|---------------|-------|
+| **Sample Stamp** | `start` | Feather MC 10 s samples: stamp at interval start. |
+| **Fill Method** | `bin` | Repeats each MET sample across its interval; try `forward` or `nearest` if alignment looks wrong. |
+| **Nearest Tolerance (s)** | `2` | Max seconds for `nearest` fill. |
+| **Backfill Before First** | `False` | For `bin`/`forward`: fill seconds before the first MET sample? |
+| **Wind Speed Units** | `mps` | Units in the MET CSV. |
+| **Convert MPH to MPS** | `False` | Set `True` if MET wind speed is in mph. |
+| **Invalid Speed Entries** | `39.9` | Comma-separated sentinel values blanked in output (common logger error code). |
 
-**MERGE_MET (bool)** — Whether wind should be merged.
-
-**MET_CSV_PATH (string)** — Path to MET logger CSV.
-
-**MET_TIMESTAMP_IDX (int)** — Timestamp column index.
-
-**MET_WINDSPD_IDX (int)** — Wind speed column.
-
-**MET_WINDDIR_IDX (int)** — Wind direction column.
-
-**MET_EXTERNTEMP_IDX (int)** — External temperature column.
+Column autofill uses exact header names in `schemas/feathermc_met.py`. If you use a non-Feather MET file, enter column indices manually.
 
 ---
-### Timestamp Semantics & Fill Strategy
 
-Diagram: How timestamps affect bin alignment
+## NVSPL hourly file structure
+
+Each output file has **54 columns**. Header row (from the script):
+
+| Columns | Names |
+|---------|--------|
+| Site, time | `SiteID`, `STime` |
+| 1/3-octave bands (33) | `H12p5` … `H20000` |
+| Overall levels | `dbA`, `dbC`, `dbF` |
+| Logger / MET | `Voltage`, `WindSpeed`, `WindDir`, `TempIns`, `TempOut`, `Humidity` |
+| IDs / metadata | `INVID`, `INSID`, `GChar1`–`GChar3` |
+| Adjustments | `AdjustmentsApplied`, `CalibrationAdjustment`, `GPSTimeAdjustment`, `GainAdjustment`, `Status` |
+
+Merged wind fills `WindSpeed`, `WindDir`, and `TempOut` when MET merge is enabled.
+
+---
+
+## Timestamp alignment (MET)
+
+Feather MC wind samples cover fixed intervals (typically 10 s). **Sample stamp** chooses which instant within the interval represents the sample:
 
 ```
-MET Sample
+MET sample interval
 |-------Interval--------|
-^ start
-        ^ center
-                ^ end
-
-start:   assign sample time at interval start
-center:  shift sample left by half interval
-end:     shift sample left by full interval
+^ start                  ^ center              ^ end
 ```
 
-**MET_SAMPLE_STAMP** — 'start', 'center', 'end'
+- **start** — assign at interval start (default for Feather MC)
+- **center** — shift left by half the interval
+- **end** — shift left by full interval
 
-**FILL_METHOD** — 'bin', 'forward', 'nearest'
+**Fill method** then maps MET values onto each one-second SPL row:
 
-```
-bin:     Assign SPL second into MET bin interval
-forward: Carry last MET sample forward until next
-nearest: Choose the closest MET sample per SPL second
-```
-
-**NEAREST_TOLERANCE_SEC** — allowable seconds difference for nearest sample.
-
-**BACKFILL_BEFORE_FIRST** — whether to fill values before first MET sample.
+- **bin** — repeat the MET value across all seconds in its interval
+- **forward** — carry the last value forward until the next sample
+- **nearest** — pick the closest MET sample within tolerance
 
 ---
-### Units & Value Normalization
 
-```
-MET_SPEED_UNITS: mps or mph
-CONVERT_MPH_TO_MPS: mph --> mps
-Invalid speeds removed: {"39.9"}
-```
-
----
-## Example Configuration for Typical Deployment
-
-```
-MERGE_MET = True
-MET_CSV_PATH = r".../MET_log.csv"
-MET_TIMESTAMP_IDX = 5
-MET_WINDSPD_IDX = 3
-MET_WINDDIR_IDX = None
-MET_EXTERNTEMP_IDX = None
-MET_SAMPLE_STAMP = "start"
-FILL_METHOD = "bin"
-NEAREST_TOLERANCE_SEC = 2
-BACKFILL_BEFORE_FIRST = False
-MET_SPEED_UNITS = "mps"
-CONVERT_MPH_TO_MPS = False
-```
-
----
-## Full Workflow Diagram (SPL + MET)
-
-```
-+------------------------+
-| Load SPL CSV           |
-+------------------------+
-           |
-           v
-+------------------------+
-| Validate schema        |
-+------------------------+
-           |
-           v
-+------------------------+
-| Load MET CSV (optional)|
-+------------------------+
-           |
-           v
-+------------------------+
-| Align timestamps       |
-+------------------------+
-           |
-           v
-+------------------------+
-| Fill per-second MET    |
-+------------------------+
-           |
-           v
-+------------------------+
-| Merge SPL + MET        |
-+------------------------+
-           |
-           v
-+------------------------+
-| Export hourly NVSPL    |
-+------------------------+
-```
-
----
 ## Troubleshooting
-- If MET fields are blank: check `MERGE_MET`, indices, encoding.
-- If wind seems time-shifted: adjust `MET_SAMPLE_STAMP`.
-- If SPL hours missing: verify SPL timestamps are contiguous.
 
+- **Blank wind columns:** confirm **Merge MET Data** is `True`, MET path is the *combined* Feather MC CSV, and column indices match the header row.
+- **Wind time-shifted:** try **Sample Stamp** `start` vs `center`; for 10 s Feather MC data, `start` + `bin` is the usual choice.
+- **Missing SPL hours:** check that Time History timestamps are contiguous in the input CSV.
+- **Wrong site in filenames:** re-browse the combined SPL CSV so Site ID autofill runs, or type the site code manually.
+
+---
+
+## Related docs
+
+| Topic | File |
+|-------|------|
+| End-to-end 821 workflow | `README_821_Pipeline.md` |
+| Combine Time History CSVs | `README_ld821_combine.md` |
+| Combine Feather MC wind | `README_FeatherMC_combine.md` |
+| SPL filename / site autofill | `schemas/ld821_spl.py` |
+| MET column names for autofill | `schemas/feathermc_met.py` |

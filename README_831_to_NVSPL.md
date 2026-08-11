@@ -18,8 +18,8 @@ Converts Larson Davis **.831** files (both legacy `LD831` and new `NPSLD831`) in
 
 ## Requirements
 
-- **Python 3.9+** (uses `zoneinfo` if you enable timezone alignment for MET/LD; otherwise runs with standard library only).
-- No external packages required by default. (Optional: `tzdata` on some platforms if you set `LD_TZ` / `MET_TZ`).
+- **Python 3.9+** (uses `zoneinfo` when `LD_TZ` / `MET_TZ` are set; otherwise standard library only).
+- No extra packages beyond the repo **`requirements.txt`** (`tzdata` covers named timezones on Windows). 831-only: you can skip `pip install` if you are not using timezone constants and do not need 821 dependencies.
 
 ---
 
@@ -130,7 +130,7 @@ If `CREATE_SITE_FOLDERS=True`, a subfolder per site (`<SITE>`) is created; other
 
 ### Public domain
 
-This project is in the worldwide [public domain](LICENSE.md):
+This project is in the worldwide public domain:
 
 > This project is in the public domain within the United States,
 > and copyright and related rights in the work worldwide are waived through the
