@@ -64,16 +64,49 @@ def close_logger(logger):
         logger.removeHandler(handler)
 
 
-def add_run_status_panel(app, parent, run_label="Combine and Process Files"):
-    """Run button, progress bar, and copyable result text on *app*."""
-    app.btn_run = ttk.Button(parent, text=run_label, command=app.run_process)
-    app.btn_run.pack(fill=tk.X, pady=(12, 4))
+def add_scrolled_text(parent, height=4, expand=True, **text_kwargs):
+    """Text widget with vertical scrollbar."""
+    frame = ttk.Frame(parent)
+    frame.pack(fill=tk.BOTH, expand=expand)
 
+    text = tk.Text(frame, height=height, wrap=tk.WORD, **text_kwargs)
+    scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text.yview)
+    text.configure(yscrollcommand=scrollbar.set)
+    text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    return text
+
+
+def pack_combine_layout(main_frame, app, run_label="Combine and Process Files"):
+    """Pin run/progress/result footer at bottom; return scrollable content frame."""
+    footer = ttk.Frame(main_frame)
+    footer.pack(side=tk.BOTTOM, fill=tk.X)
+    add_run_status_panel(app, footer, run_label)
+
+    content = ttk.Frame(main_frame)
+    content.pack(fill=tk.BOTH, expand=True)
+    return content
+
+
+def add_progress_bar(parent, app):
+    """Progress label and bar (e.g. above a log panel)."""
     app.lbl_progress = ttk.Label(parent, text="", font=("Segoe UI", 9))
     app.lbl_progress.pack(fill=tk.X, pady=(0, 2))
 
     app.progress = ttk.Progressbar(parent, mode="determinate", maximum=100)
     app.progress.pack(fill=tk.X, pady=(0, 6))
+
+
+def add_run_status_panel(app, parent, run_label="Combine and Process Files"):
+    """Run button, progress bar, and scrollable copyable result text on *app*."""
+    app.btn_run = ttk.Button(parent, text=run_label, command=app.run_process)
+    app.btn_run.pack(fill=tk.X, pady=(8, 4))
+
+    app.lbl_progress = ttk.Label(parent, text="", font=("Segoe UI", 9))
+    app.lbl_progress.pack(fill=tk.X, pady=(0, 2))
+
+    app.progress = ttk.Progressbar(parent, mode="determinate", maximum=100)
+    app.progress.pack(fill=tk.X, pady=(0, 4))
 
     app.lbl_result = tk.Label(
         parent, text="Result (select text to copy):", anchor="w",
@@ -81,11 +114,17 @@ def add_run_status_panel(app, parent, run_label="Combine and Process Files"):
     )
     app.lbl_result.pack(fill=tk.X, pady=(0, 2))
 
-    app.txt_result = tk.Text(
-        parent, height=4, wrap=tk.WORD, font=("Segoe UI", 9),
-        relief=tk.GROOVE, borderwidth=1, padx=4, pady=4, foreground="#666666",
+    app.txt_result = add_scrolled_text(
+        parent,
+        height=3,
+        expand=True,
+        font=("Segoe UI", 9),
+        relief=tk.GROOVE,
+        borderwidth=1,
+        padx=4,
+        pady=4,
+        foreground="#666666",
     )
-    app.txt_result.pack(fill=tk.X, pady=(0, 4))
     app.txt_result.bind("<Key>", app._result_text_key)
 
 
@@ -123,6 +162,12 @@ class WorkerGuiMixin:
         self.txt_result.delete("1.0", tk.END)
         if text:
             self.txt_result.insert("1.0", text)
+
+    def _set_run_busy(self, busy, idle_text="Run Conversion Process"):
+        if busy:
+            self.btn_run.config(state=tk.DISABLED, text="Processing…")
+        else:
+            self.btn_run.config(state=tk.NORMAL, text=idle_text)
 
     def _set_busy(self, busy):
         if busy:

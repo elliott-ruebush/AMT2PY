@@ -14,9 +14,9 @@ from tkinter import ttk, filedialog, messagebox
 from shared_gui_components import (
     ToolTip,
     WorkerGuiMixin,
-    add_run_status_panel,
     close_logger,
     create_file_logger,
+    pack_combine_layout,
 )
 
 # Timezone definitions
@@ -213,6 +213,7 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         super().__init__()
         self.title("FeatherMC Wind Data Combination Tool")
         self.geometry("560x600")
+        self.minsize(480, 480)
         self.resizable(True, True)
 
         self.selected_folder = ""
@@ -224,9 +225,11 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        content = pack_combine_layout(main_frame, self)
+
         # --- File Selector Group ---
-        grp_files = ttk.LabelFrame(main_frame, text=" MET Folder Selector ", padding="10")
-        grp_files.pack(fill=tk.BOTH, expand=True, pady=5)
+        grp_files = ttk.LabelFrame(content, text=" MET Folder Selector ", padding="10")
+        grp_files.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 
         btn_browse = ttk.Button(
             grp_files,
@@ -251,8 +254,8 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # --- User Input & Metadata Group ---
-        grp_meta = ttk.LabelFrame(main_frame, text=" Site Settings ", padding="10")
-        grp_meta.pack(fill=tk.X, pady=5)
+        grp_meta = ttk.LabelFrame(content, text=" Site Settings ", padding="10")
+        grp_meta.pack(fill=tk.X, pady=(0, 5))
 
         # site_name
         lbl_site = ttk.Label(grp_meta, text="Site Name:", width=18, anchor="w")
@@ -276,8 +279,8 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         ToolTip(lbl_serial, hint_serial)
 
         # --- Timezone & DST Group ---
-        grp_tz = ttk.LabelFrame(main_frame, text=" Time Zone & DST Handling ", padding="10")
-        grp_tz.pack(fill=tk.X, pady=5)
+        grp_tz = ttk.LabelFrame(content, text=" Time Zone & DST Handling ", padding="10")
+        grp_tz.pack(fill=tk.X, pady=(0, 5))
 
         lbl_tz = ttk.Label(grp_tz, text="Time Zone:", width=18, anchor="w")
         lbl_tz.grid(row=0, column=0, sticky="w", pady=4)
@@ -293,8 +296,6 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
             variable=self.var_dst
         )
         chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
-
-        add_run_status_panel(self, main_frame)
 
     def browse_folder(self):
         if self._worker_running:

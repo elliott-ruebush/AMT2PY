@@ -13,9 +13,9 @@ from tkinter import ttk, filedialog, messagebox
 from shared_gui_components import (
     ToolTip,
     WorkerGuiMixin,
-    add_run_status_panel,
     close_logger,
     create_file_logger,
+    pack_combine_layout,
 )
 
 # Compile regex pattern to match: ...Time History[ optional number ].csv
@@ -128,6 +128,7 @@ class LD821CombineApp(WorkerGuiMixin, tk.Tk):
         super().__init__()
         self.title("LD821 Time History Combiner")
         self.geometry("560x520")
+        self.minsize(480, 440)
         self.resizable(True, True)
 
         self.selected_folder = ""
@@ -139,9 +140,11 @@ class LD821CombineApp(WorkerGuiMixin, tk.Tk):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        content = pack_combine_layout(main_frame, self)
+
         # --- Folder Selector Group ---
-        grp_folder = ttk.LabelFrame(main_frame, text=" RAW Folder Selector ", padding="10")
-        grp_folder.pack(fill=tk.BOTH, expand=True, pady=5)
+        grp_folder = ttk.LabelFrame(content, text=" RAW Folder Selector ", padding="10")
+        grp_folder.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 
         btn_browse = ttk.Button(grp_folder, text="Select High-Level Directory Where Time History Files Live (e.g. RAW)...", command=self.browse_folder)
         btn_browse.pack(anchor="w", pady=(0, 5))
@@ -162,8 +165,8 @@ class LD821CombineApp(WorkerGuiMixin, tk.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # --- Metadata Inputs Group ---
-        grp_meta = ttk.LabelFrame(main_frame, text=" Site Settings ", padding="10")
-        grp_meta.pack(fill=tk.X, pady=5)
+        grp_meta = ttk.LabelFrame(content, text=" Site Settings ", padding="10")
+        grp_meta.pack(fill=tk.X, pady=(0, 5))
 
         # sitename
         lbl_site = ttk.Label(grp_meta, text="Site Name:", width=18, anchor="w")
@@ -175,8 +178,6 @@ class LD821CombineApp(WorkerGuiMixin, tk.Tk):
         hint_site = "Used in output filename (e.g. DENATRLA)"
         ToolTip(ent_site, hint_site)
         ToolTip(lbl_site, hint_site)
-
-        add_run_status_panel(self, main_frame)
 
     def browse_folder(self):
         if self._worker_running:

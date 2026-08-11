@@ -8,7 +8,14 @@ from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from shared_gui_components import ToolTip
+from shared_gui_components import (
+    ToolTip,
+    WorkerGuiMixin,
+    add_progress_bar,
+    add_scrolled_text,
+    create_file_logger,
+    close_logger,
+)
 
 # ==============================================================================
 # 1. CORE PROCESSING LOGIC (Preserved & Adapted for GUI Integration)
@@ -511,22 +518,37 @@ def merge_met_for_day(hour_bundles, config, log_func):
 # 2. GUI INTERFACE (Tkinter)
 # ==============================================================================
 
-class AppGUI(tk.Tk):
+class AppGUI(WorkerGuiMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("LD821 CSV to NVSPL Converter")
         self.geometry("780x820")
-        
-        # Internal fields setup
+        self.minsize(640, 600)
+        self.resizable(True, True)
+
         self.vars = {}
+        self.init_worker_state()
         self._setup_ui()
 
     def _setup_ui(self):
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        run_bar = ttk.Frame(main_frame)
+        run_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
+        self.btn_run = ttk.Button(run_bar, text="Run Conversion Process", command=self.start_processing)
+        self.btn_run.pack(fill=tk.X)
+        add_progress_bar(run_bar, self)
+
+        grp_log = ttk.LabelFrame(main_frame, text=" Process Output Log ", padding="5")
+        grp_log.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=5)
+        self.txt_log = add_scrolled_text(grp_log, height=8, expand=True)
+
+        content = ttk.Frame(main_frame)
+        content.pack(fill=tk.BOTH, expand=True)
+
         # File and Main Settings Frame
-        grp_paths = ttk.LabelFrame(main_frame, text=" File Paths & Site Info ", padding="10")
+        grp_paths = ttk.LabelFrame(content, text=" File Paths & Site Info ", padding="10")
         grp_paths.pack(fill=tk.X, pady=5)
 
         self._create_path_row(grp_paths, 0, "INPUT_CSV", "Input SPL CSV:", "Navigate to combined SPL csv", is_file=True)
@@ -534,7 +556,7 @@ class AppGUI(tk.Tk):
         self._create_entry_row(grp_paths, 2, "SITE_ID", "Site ID:", "Typically park code and three digit number (ex. CARE001)")
 
         # MET Settings Frame
-        grp_met = ttk.LabelFrame(main_frame, text=" MET (Wind) Data Merge Settings ", padding="10")
+        grp_met = ttk.LabelFrame(content, text=" MET (Wind) Data Merge Settings ", padding="10")
         grp_met.pack(fill=tk.X, pady=5)
 
         self._create_combo_row(grp_met, 0, "MERGE_MET", "Merge MET Data:", ["True", "False"], "Do you want to merge met and spl data?")
@@ -545,7 +567,7 @@ class AppGUI(tk.Tk):
         self._create_entry_row(grp_met, 5, "MET_EXTERNTEMP_IDX", "Temp Col Index:", "external temp column index (optional)")
 
         # Strategy and Units Settings Frame
-        grp_strat = ttk.LabelFrame(main_frame, text=" Alignment & Units ", padding="10")
+        grp_strat = ttk.LabelFrame(content, text=" Alignment & Units ", padding="10")
         grp_strat.pack(fill=tk.X, pady=5)
 
         self._create_combo_row(grp_strat, 0, "MET_SAMPLE_STAMP", "Sample Stamp:", ["start", "center", "end"], "")
@@ -555,17 +577,6 @@ class AppGUI(tk.Tk):
         self._create_combo_row(grp_strat, 4, "MET_SPEED_UNITS", "Wind Speed Units:", ["mps", "mph"], "What are the units for wind speed")
         self._create_combo_row(grp_strat, 5, "CONVERT_MPH_TO_MPS", "Convert MPH to MPS:", ["False", "True"], "")
         self._create_entry_row(grp_strat, 6, "MET_INVALID_SPEED", "Invalid Speed Entries:", "wipe invalid wind speed entries -> blank (comma separated)")
-
-        # Execution Controls
-        btn_run = ttk.Button(main_frame, text="Run Conversion Process", command=self.start_processing)
-        btn_run.pack(pady=10, fill=tk.X)
-
-        # Output Log Window
-        grp_log = ttk.LabelFrame(main_frame, text=" Process Output Log ", padding="5")
-        grp_log.pack(fill=tk.BOTH, expand=True, pady=5)
-
-        self.txt_log = tk.Text(grp_log, height=10, wrap=tk.WORD)
-        self.txt_log.pack(fill=tk.BOTH, expand=True)
 
         # Default Value Loading
         self._load_defaults()
@@ -620,13 +631,13 @@ class AppGUI(tk.Tk):
 
     def _load_defaults(self):
         defaults = {
-            "INPUT_CSV": r"E:\TARs\MORU\MORUA2503_BreezyPoint_20260626\RAW\MORUA2503_821SE 40362-260702000-131159_Time History.csv",
-            "OUTPUT_DIR": r"E:\TARs\MORU\MORUA2503_BreezyPoint_20260626\NVSPL",
-            "SITE_ID": "MORUA2503",
-            "MERGE_MET": "True",
-            "MET_CSV_PATH": r"E:\TARs\MORU\MORUA2503_BreezyPoint_20260626\MET\00000018 2026-07-09 125259.csv",
-            "MET_TIMESTAMP_IDX": "5",
-            "MET_WINDSPD_IDX": "3",
+            "INPUT_CSV": "",
+            "OUTPUT_DIR": "",
+            "SITE_ID": "",
+            "MERGE_MET": "False",
+            "MET_CSV_PATH": "",
+            "MET_TIMESTAMP_IDX": "",
+            "MET_WINDSPD_IDX": "",
             "MET_WINDDIR_IDX": "None",
             "MET_EXTERNTEMP_IDX": "None",
             "MET_SAMPLE_STAMP": "start",
@@ -635,15 +646,21 @@ class AppGUI(tk.Tk):
             "BACKFILL_BEFORE_FIRST": "False",
             "MET_SPEED_UNITS": "mps",
             "CONVERT_MPH_TO_MPS": "False",
-            "MET_INVALID_SPEED": "39.9"
+            "MET_INVALID_SPEED": "",
         }
         for k, v in defaults.items():
             if k in self.vars:
                 self.vars[k].set(v)
 
-    def log(self, message):
-        self.txt_log.insert(tk.END, str(message) + "\n")
+    def _append_log(self, message):
+        self.txt_log.insert(tk.END, message + "\n")
         self.txt_log.see(tk.END)
+
+    def log(self, message):
+        self._on_ui(self._append_log, str(message))
+
+    def _set_busy(self, busy):
+        self._set_run_busy(busy, idle_text="Run Conversion Process")
 
     def parse_optional_idx(self, val_str):
         val_str = str(val_str).strip()
@@ -652,9 +669,11 @@ class AppGUI(tk.Tk):
         return int(val_str)
 
     def start_processing(self):
+        if self._worker_running:
+            return
+
         self.txt_log.delete("1.0", tk.END)
         try:
-            # Build configuration map from UI elements
             config = {
                 "INPUT_CSV": self.vars["INPUT_CSV"].get(),
                 "OUTPUT_DIR": self.vars["OUTPUT_DIR"].get(),
@@ -677,33 +696,89 @@ class AppGUI(tk.Tk):
             messagebox.showerror("Configuration Error", f"Failed to parse user entries: {e}")
             return
 
-        # Execute conversion inside background thread to preserve UI reactivity
+        self._worker_running = True
+        self._set_busy(True)
+        self._update_progress(0, 1, "Starting…")
+
         threading.Thread(target=self.run_process, args=(config,), daemon=True).start()
 
     def run_process(self, config):
+        logger = None
+        progress = self._make_progress_callback()
+
         try:
-            self.log("Starting conversion process...")
             ensure_dir(config["OUTPUT_DIR"])
 
-            per_day = parse_ld821_to_day_records(config["SITE_ID"], config["INPUT_CSV"])
-            total_files = 0
+            log_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            log_path = os.path.join(config["OUTPUT_DIR"], f"nvspl_convert_{log_ts}.log")
+            logger, log_path = create_file_logger(
+                "nvspl_convert",
+                log_path,
+                [
+                    "----- LD821 CSV to NVSPL conversion run started -----",
+                    f"Site ID: {config['SITE_ID']} | Input: {config['INPUT_CSV']}",
+                ],
+            )
 
-            for day, recs in sorted(per_day.items()):
+            def dual_log(message):
+                msg = str(message)
+                logger.info(msg)
+                self._on_ui(self._append_log, msg)
+
+            dual_log("Starting conversion process...")
+
+            per_day = parse_ld821_to_day_records(config["SITE_ID"], config["INPUT_CSV"])
+            days = sorted(per_day.items())
+            total_steps = len(days) + 1
+            progress(1, total_steps, f"Parsed {len(days)} day(s)")
+
+            total_files = 0
+            for day_idx, (day, recs) in enumerate(days, start=1):
+                progress(day_idx + 1, total_steps, f"Processing day {day_idx} of {len(days)}")
+
                 hour_bundles = parse_daily_file_to_hours(config["SITE_ID"], recs)
-                hour_bundles = merge_met_for_day(hour_bundles, config, self.log)
+                hour_bundles = merge_met_for_day(hour_bundles, config, dual_log)
 
                 for b in hour_bundles:
                     write_hour_file(config["OUTPUT_DIR"], config["SITE_ID"], b["start"], b["rows"])
                     total_files += 1
 
-                self.log(f"[WRITE] Day {day} -> {len(hour_bundles)} hourly NVSPL files")
+                dual_log(f"[WRITE] Day {day} -> {len(hour_bundles)} hourly NVSPL files")
 
-            self.log(f"\nCompleted! Total NVSPL files created: {total_files}")
-            messagebox.showinfo("Success", f"Processing completed successfully.\nTotal files written: {total_files}")
+            dual_log(f"\nCompleted! Total NVSPL files created: {total_files}")
+            self._on_ui(self._on_success, total_files, config["OUTPUT_DIR"], log_path)
 
         except Exception as ex:
-            self.log(f"\n[ERROR] Conversion failed: {ex}")
-            messagebox.showerror("Processing Error", f"An error occurred:\n{ex}")
+            if logger:
+                logger.exception("Conversion failed")
+            self._on_ui(self._append_log, f"\n[ERROR] Conversion failed: {ex}")
+            self._on_ui(self._on_failure, str(ex))
+        finally:
+            if logger:
+                close_logger(logger)
+            self._on_ui(self._on_worker_done)
+
+    def _on_success(self, total_files, output_dir, log_path):
+        total = int(float(self.progress.cget("maximum")))
+        self._update_progress(total, total, "Done")
+        self._append_log(
+            f"\n--- Result Summary ---\n"
+            f"Output directory: {output_dir}\n"
+            f"Total NVSPL files created: {total_files}\n"
+            f"Log file: {log_path}"
+        )
+        messagebox.showinfo(
+            "LD821 NVSPL — Complete",
+            f"LD821 CSV to NVSPL Converter finished successfully.\n\n"
+            f"Total files written: {total_files}\n\nOutput saved to:\n{output_dir}",
+        )
+
+    def _on_failure(self, error):
+        self._reset_progress()
+        messagebox.showerror(
+            "LD821 NVSPL — Error",
+            f"LD821 CSV to NVSPL Converter failed:\n{error}",
+        )
 
 # ==============================================================================
 # 3. ENTRY POINT
