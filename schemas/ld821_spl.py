@@ -70,16 +70,37 @@ def _overload_index(cols):
     return None
 
 
+def _date_index(cols):
+    i = col_index(cols, (LD821_DATE,))
+    if i is not None:
+        return i
+    # G4 variants (e.g. "Date/Time"); pre-schema NVSPL used substring match
+    for idx, name in enumerate(cols):
+        if "Date" in name:
+            return idx
+    return None
+
+
+def _h12p5_index(cols):
+    i = col_index(cols, (LD821_H12P5,))
+    if i is not None:
+        return i
+    for idx, name in enumerate(cols):
+        if "12.5" in name:
+            return idx
+    return None
+
+
 def ld821_spl_runtime_indices(header_row):
-    """Exact G4 column lookup; optional columns may be None."""
+    """G4 column lookup; exact names first, then legacy substring fallbacks."""
     cols = header_columns(header_row)
     return {
-        "sdate_idx": col_index(cols, (LD821_DATE,)),
+        "sdate_idx": _date_index(cols),
         "dba_idx": col_index(cols, (LD821_LAEQ,)),
         "dbz_idx": col_index(cols, (LD821_LZEQ,)),
         "dbc_idx": col_index(cols, (LD821_LCEQ,)),
         "power_idx": _external_power_index(cols),
-        "h12p5_idx": col_index(cols, (LD821_H12P5,)),
+        "h12p5_idx": _h12p5_index(cols),
         "ovr_idx": _overload_index(cols),
     }
 
@@ -87,7 +108,12 @@ def ld821_spl_runtime_indices(header_row):
 def validate_ld821_header(header_row):
     idx = ld821_spl_runtime_indices(header_row)
     if idx["sdate_idx"] is None or idx["h12p5_idx"] is None:
-        raise RuntimeError("LD821 required columns not found (Date and H12.5 band).")
+        cols = header_columns(header_row)
+        preview = ", ".join(cols[:12]) + ("…" if len(cols) > 12 else "")
+        raise RuntimeError(
+            "LD821 required columns not found (Date and H12.5 band). "
+            f"Header columns seen: {preview}"
+        )
     return idx
 
 
