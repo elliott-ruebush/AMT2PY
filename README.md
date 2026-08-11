@@ -19,8 +19,8 @@ The Python tools in this repository provide functionality equivalent to key AMT 
 
 ### Core Capabilities
 
-- **Merge LD821‑ENV SPL logs** into a single `.821` file with correct header and offsets
-- **Merge wind logger data** with `.821` files during NVSPL conversion
+- **Merge LD821‑ENV SPL logs** into a single combined Time History CSV
+- **Merge wind logger data** with combined SPL CSV during NVSPL conversion
 - **Merge LD831 SPL logs** into a single `.831` file with correct `NPSLD831` header and offsets
 - **Merge wind logger data** with `.831` files during NVSPL conversion
 
@@ -101,6 +101,8 @@ Below is a summary of included scripts and their roles in the processing pipelin
 ---
 
 ## LD 821‑ENV Workflow
+
+See **`README_821_Pipeline.md`** for a step-by-step guide (setup, folder layout, and all three scripts).
 
 ### 1. `ld821_combine.py`
 
@@ -188,8 +190,12 @@ MET_CSV_PATH = "path/to/met.csv"
 # Requirements
 
 - Python **3.9+**
-- Standard library only
-- Optional: `tzdata` for timezone handling
+- Third-party packages (821 combine scripts): `pandas`, `pytz`
+- Optional: `tzdata` for timezone handling in the 831 NVSPL script on some platforms
+
+```Shell
+pip install -r requirements.txt
+```
 
 ---
 
