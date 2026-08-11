@@ -1,2 +1,9 @@
+# Local Python environment
+.venv/
+
+# Editor settings
+.vscode/
+
+# Local/ignored scripts
 ld831_batch_to_csv.py
 Metrics_compare.py

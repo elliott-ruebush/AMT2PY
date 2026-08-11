@@ -4,13 +4,33 @@ Python scripts that take G4-exported Time History CSVs (and optional Feather MC 
 
 ## Setup
 
-Python 3.9 or newer. Install dependencies once:
+Python 3.9 or newer. Clone this repo, then create a virtual environment and install dependencies:
+
+```bash
+cd AMT2PY
+python -m venv .venv
+```
+
+Activate it:
+
+```bash
+# Windows Command Prompt
+.venv\Scripts\activate
+
+# Git Bash (Windows)
+source .venv/Scripts/activate
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+Then install packages:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Clone this repo and work from that folder. On Windows, run the scripts from Git Bash or Command Prompt:
+Run the scripts from the repo folder with the venv active. On Windows, Git Bash or Command Prompt both work:
 
 ```bash
 python ld821_combine.py
