@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 from logging import Formatter, StreamHandler, FileHandler
 
 import tkinter as tk
 from tkinter import ttk
+
+from csv_schema_utils import normalize_gui_path
 
 
 class ToolTip:
@@ -37,6 +40,7 @@ class ToolTip:
 
 
 def create_file_logger(logger_name, log_path, header_lines):
+    log_path = os.path.normpath(log_path)
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
@@ -54,8 +58,9 @@ def create_file_logger(logger_name, log_path, header_lines):
 
     for line in header_lines:
         logger.info(line)
-    logger.info(f"Log file: {log_path}")
-    return logger, log_path
+    display_log_path = normalize_gui_path(log_path)
+    logger.info(f"Log file: {display_log_path}")
+    return logger, display_log_path
 
 
 def close_logger(logger):

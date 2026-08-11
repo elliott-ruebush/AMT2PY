@@ -30,7 +30,7 @@ from ld821_spl_schema import (
     infer_spl_gui_defaults,
     validate_ld821_header,
 )
-from csv_schema_utils import header_columns
+from csv_schema_utils import header_columns, normalize_gui_path
 
 # ==============================================================================
 # 1. CORE PROCESSING LOGIC (Preserved & Adapted for GUI Integration)
@@ -770,7 +770,7 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
             else:
                 res = filedialog.askdirectory()
             if res:
-                var.set(res)
+                var.set(normalize_gui_path(res))
                 if key == "INPUT_CSV":
                     self._apply_spl_csv_defaults(res)
                 elif key == "MET_CSV_PATH":
@@ -847,11 +847,11 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
         self.txt_log.delete("1.0", tk.END)
         try:
             config = {
-                "INPUT_CSV": self.vars["INPUT_CSV"].get(),
-                "OUTPUT_DIR": self.vars["OUTPUT_DIR"].get(),
+                "INPUT_CSV": normalize_gui_path(self.vars["INPUT_CSV"].get()),
+                "OUTPUT_DIR": normalize_gui_path(self.vars["OUTPUT_DIR"].get()),
                 "SITE_ID": self.vars["SITE_ID"].get(),
                 "MERGE_MET": self.vars["MERGE_MET"].get() == "True",
-                "MET_CSV_PATH": self.vars["MET_CSV_PATH"].get(),
+                "MET_CSV_PATH": normalize_gui_path(self.vars["MET_CSV_PATH"].get()),
                 "MET_TIMESTAMP_IDX": self.parse_optional_idx(self.vars["MET_TIMESTAMP_IDX"].get()),
                 "MET_WINDSPD_IDX": self.parse_optional_idx(self.vars["MET_WINDSPD_IDX"].get()),
                 "MET_WINDDIR_IDX": self.parse_optional_idx(self.vars["MET_WINDDIR_IDX"].get()),
@@ -935,6 +935,8 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
     def _on_success(self, total_files, output_dir, log_path):
         total = int(float(self.progress.cget("maximum")))
         self._update_progress(total, total, "Done")
+        output_dir = normalize_gui_path(output_dir)
+        log_path = normalize_gui_path(log_path)
         self._append_log(
             f"\n--- Result Summary ---\n"
             f"Output directory: {output_dir}\n"

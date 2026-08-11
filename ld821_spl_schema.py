@@ -5,7 +5,7 @@ import csv
 import os
 import re
 
-from csv_schema_utils import col_index, header_columns
+from csv_schema_utils import col_index, header_columns, normalize_gui_path
 
 LD821_HEADER_MARKER = "Record Type"
 LD821_RECORD_TYPE = "Record Type"
@@ -105,4 +105,7 @@ def infer_spl_gui_defaults(csv_path):
     csv_dir = os.path.dirname(os.path.abspath(csv_path))
     nvspl_dir = os.path.join(csv_dir, "NVSPL")
     output_dir = nvspl_dir if os.path.isdir(nvspl_dir) else csv_dir
-    return {"SITE_ID": site, "OUTPUT_DIR": output_dir}
+    return {
+        "SITE_ID": site,
+        "OUTPUT_DIR": normalize_gui_path(output_dir),
+    }

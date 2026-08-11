@@ -19,6 +19,7 @@ from shared_gui_components import (
     pack_combine_layout,
 )
 from feathermc_met_schema import FEATHERMC_COMBINED_TIMESTAMP, FEATHERMC_WIND_GUST
+from csv_schema_utils import normalize_gui_path
 
 # Timezone definitions
 COMMON_TZS = [
@@ -398,6 +399,8 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
     def _on_success(self, output_path, log_path, file_count):
         total = int(float(self.progress.cget("maximum")))
         self._update_progress(total, total, "Done")
+        output_path = normalize_gui_path(output_path)
+        log_path = normalize_gui_path(log_path)
         self._set_result(
             f"FeatherMC combine done — {file_count} file(s)\n"
             f"Output: {output_path}\n"

@@ -1,6 +1,18 @@
 # -*- coding: utf-8 -*-
 """Shared helpers for CSV header / column index lookup."""
 
+import os
+
+
+def normalize_gui_path(path):
+    """Use forward slashes in GUI path fields and user-visible output.
+
+    Safe for Python file APIs on Windows; paste into Explorer's address bar works too.
+    """
+    if not path:
+        return path
+    return os.path.normpath(path).replace("\\", "/")
+
 
 def header_columns(header_row):
     return [str(c or "").strip() for c in (header_row or [])]

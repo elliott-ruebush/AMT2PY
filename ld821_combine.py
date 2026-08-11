@@ -18,6 +18,7 @@ from shared_gui_components import (
     pack_combine_layout,
 )
 from ld821_spl_schema import LD821_COMBINED_BASENAME, LD821_HEADER_MARKER
+from csv_schema_utils import normalize_gui_path
 
 # Compile regex pattern to match: ...Time History[ optional number ].csv
 TIME_HISTORY_PATTERN = re.compile(r'Time History(?:\s*\d+)?\.csv$', re.IGNORECASE)
@@ -274,6 +275,8 @@ class LD821CombineApp(WorkerGuiMixin, tk.Tk):
     def _on_success(self, output_path, log_path, file_count):
         total = int(float(self.progress.cget("maximum")))
         self._update_progress(total, total, "Done")
+        output_path = normalize_gui_path(output_path)
+        log_path = normalize_gui_path(log_path)
         self._set_result(
             f"LD821 combine done — {file_count} file(s)\n"
             f"Output: {output_path}\n"
