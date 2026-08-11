@@ -57,7 +57,7 @@ class ToolTip:
 # ------------------------------------------------------------------------------
 # Core Processing Functions
 # ------------------------------------------------------------------------------
-def setup_logger(output_dir: str, site_name: str, deploy: str, serial: str) -> logging.Logger:
+def setup_logger(output_dir: str, site_name: str, deploy: str, serial: str):
     log_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = os.path.join(output_dir, f"feathermc_clean_{log_ts}.log")
 
@@ -116,6 +116,10 @@ def read_and_combine_files(file_paths, logger: logging.Logger, progress_callback
     return combined_df
 
 def clean_repeated_headers(df: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
+    if '#' not in df.columns:
+        msg = "Required column '#' not found."
+        logger.error(msg)
+        raise ValueError(msg)
     before = len(df)
     df_clean = df[pd.to_numeric(df['#'], errors='coerce').notnull()].copy()
     after = len(df_clean)
@@ -179,6 +183,10 @@ def clean_and_format_data(df: pd.DataFrame, tz: str, adjust_dst: bool, logger: l
     return df
 
 def export_data(df: pd.DataFrame, file_paths, serial: str, logger: logging.Logger):
+    if df.empty:
+        msg = "No valid data rows remain after cleaning and UTC conversion."
+        logger.error(msg)
+        raise ValueError(msg)
     output_dir = os.path.dirname(file_paths[0])
     last_date_str = df['Date-Time (LOC)'].iloc[-1]
     last_dt = datetime.strptime(last_date_str, "%m/%d/%Y %H:%M:%S")
@@ -244,6 +252,7 @@ class FeatherMCApp(tk.Tk):
 
         btn_browse = ttk.Button(grp_files, text="Select Wind CSV Files...", command=self.browse_files)
         btn_browse.pack(anchor="w", pady=(0, 5))
+        self.btn_browse = btn_browse
 
         self.lbl_file_count = ttk.Label(grp_files, text="No files selected", font=("Segoe UI", 9, "italic"))
         self.lbl_file_count.pack(anchor="w", pady=(0, 2))
@@ -336,7 +345,17 @@ class FeatherMCApp(tk.Tk):
         self.txt_result.pack(fill=tk.X, pady=(0, 4))
         self.txt_result.bind("<Key>", self._result_text_key)
 
+    def _set_busy(self, busy):
+        if busy:
+            self.btn_run.config(state=tk.DISABLED, text="Processing…")
+            self.btn_browse.config(state=tk.DISABLED)
+        else:
+            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+            self.btn_browse.config(state=tk.NORMAL)
+
     def browse_files(self):
+        if self._worker_running:
+            return
         file_paths = filedialog.askopenfilenames(
             title="Select wind CSV files (exclude MD files)",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
@@ -363,50 +382,50 @@ class FeatherMCApp(tk.Tk):
         adjust_for_dst = self.var_dst.get()
 
         output_dir_for_logs = os.path.dirname(self.selected_files[0])
+        files = list(self.selected_files)
 
         self._worker_running = True
-        self.btn_run.config(state=tk.DISABLED, text="Processing…")
+        self._set_busy(True)
         self._set_result("")
         self._update_progress(0, 1, "Starting…")
 
         threading.Thread(
             target=self._run_worker,
-            args=(output_dir_for_logs, site_name, deploy, serial, deploy_tzone, adjust_for_dst),
+            args=(output_dir_for_logs, site_name, deploy, serial, deploy_tzone, adjust_for_dst, files),
             daemon=True,
         ).start()
 
-    def _run_worker(self, output_dir, site_name, deploy, serial, deploy_tzone, adjust_for_dst):
+    def _run_worker(self, output_dir, site_name, deploy, serial, deploy_tzone, adjust_for_dst, files):
         logger = None
-        n = len(self.selected_files)
+        n = len(files)
         total = n + 2
 
-        def progress(step, msg):
-            self._on_ui(self._update_progress, step, total, msg)
+        def progress(step, total, message):
+            self._on_ui(self._update_progress, step, total, message)
 
         try:
             logger, log_path = setup_logger(output_dir, site_name, deploy, serial)
             logger.info(f"Time zone selected: {deploy_tzone} | adjust_for_dst={adjust_for_dst}")
 
-            raw_data = read_and_combine_files(self.selected_files, logger, progress_callback=progress)
-            progress(n + 1, "Cleaning and converting timestamps…")
+            raw_data = read_and_combine_files(files, logger, progress_callback=progress)
+            progress(n + 1, total, "Cleaning and converting timestamps…")
             clean_data = clean_and_format_data(raw_data, deploy_tzone, adjust_for_dst, logger)
-            progress(n + 2, "Writing output…")
-            output_path = export_data(clean_data, self.selected_files, serial, logger)
+            progress(n + 2, total, "Writing output…")
+            output_path = export_data(clean_data, files, serial, logger)
 
-            self._on_ui(self._on_success, output_path, log_path)
+            self._on_ui(self._on_success, output_path, log_path, n)
         except Exception as e:
             self._on_ui(self._on_failure, str(e))
         finally:
             if logger:
                 close_logger(logger)
-            self._worker_running = False
             self._on_ui(self._on_worker_done)
 
-    def _on_success(self, output_path, log_path):
+    def _on_success(self, output_path, log_path, file_count):
         total = int(float(self.progress.cget("maximum")))
         self._update_progress(total, total, "Done")
         self._set_result(
-            f"FeatherMC combine done — {len(self.selected_files)} file(s)\n"
+            f"FeatherMC combine done — {file_count} file(s)\n"
             f"Output: {output_path}\n"
             f"Log: {log_path}",
             ok=True,
@@ -414,7 +433,7 @@ class FeatherMCApp(tk.Tk):
         messagebox.showinfo(
             "FeatherMC Combine — Complete",
             f"FeatherMC Wind Combiner finished successfully.\n\n"
-            f"Combined {len(self.selected_files)} file(s).\n\nOutput saved to:\n{output_path}"
+            f"Combined {file_count} file(s).\n\nOutput saved to:\n{output_path}"
         )
 
     def _on_failure(self, error):
@@ -426,7 +445,8 @@ class FeatherMCApp(tk.Tk):
         )
 
     def _on_worker_done(self):
-        self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+        self._worker_running = False
+        self._set_busy(False)
         if float(self.progress.cget("value")) < float(self.progress.cget("maximum")):
             self._reset_progress()
 

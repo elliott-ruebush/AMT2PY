@@ -47,7 +47,7 @@ class ToolTip:
 # ------------------------------------------------------------------------------
 # Core Processing Functions
 # ------------------------------------------------------------------------------
-def setup_logger(output_dir: str, sitename: str, deploy: str) -> logging.Logger:
+def setup_logger(output_dir: str, sitename: str, deploy: str):
     log_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = os.path.join(output_dir, f"combine_slm_{log_ts}.log")
 
@@ -216,6 +216,7 @@ class LD821CombineApp(tk.Tk):
 
         btn_browse = ttk.Button(grp_folder, text="Select High-Level Directory Where Time History Files Live (e.g. RAW)...", command=self.browse_folder)
         btn_browse.pack(anchor="w", pady=(0, 5))
+        self.btn_browse = btn_browse
 
         self.lbl_folder_status = ttk.Label(grp_folder, text="No folder selected", font=("Segoe UI", 9, "italic"))
         self.lbl_folder_status.pack(anchor="w", pady=(0, 2))
@@ -279,7 +280,17 @@ class LD821CombineApp(tk.Tk):
         self.txt_result.pack(fill=tk.X, pady=(0, 4))
         self.txt_result.bind("<Key>", self._result_text_key)
 
+    def _set_busy(self, busy):
+        if busy:
+            self.btn_run.config(state=tk.DISABLED, text="Processing…")
+            self.btn_browse.config(state=tk.DISABLED)
+        else:
+            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+            self.btn_browse.config(state=tk.NORMAL)
+
     def browse_folder(self):
+        if self._worker_running:
+            return
         folder = filedialog.askdirectory(title="Select High-Level Directory (RAW)")
         if not folder:
             return
@@ -332,19 +343,20 @@ class LD821CombineApp(tk.Tk):
                 return
 
         output_dir = self.selected_folder
+        files = list(self.matched_files)
 
         self._worker_running = True
-        self.btn_run.config(state=tk.DISABLED, text="Processing…")
+        self._set_busy(True)
         self._set_result("")
         self._update_progress(0, 1, "Starting…")
 
         threading.Thread(
             target=self._run_worker,
-            args=(output_dir, sitename, deploy),
+            args=(output_dir, sitename, deploy, files),
             daemon=True,
         ).start()
 
-    def _run_worker(self, output_dir, sitename, deploy):
+    def _run_worker(self, output_dir, sitename, deploy, files):
         logger = None
 
         def progress(step, total, message):
@@ -353,23 +365,22 @@ class LD821CombineApp(tk.Tk):
         try:
             logger, log_path = setup_logger(output_dir, sitename, deploy)
             output_path = process_slm_files(
-                self.matched_files, sitename, deploy, logger, output_dir,
+                files, sitename, deploy, logger, output_dir,
                 progress_callback=progress,
             )
-            self._on_ui(self._on_success, output_path, log_path)
+            self._on_ui(self._on_success, output_path, log_path, len(files))
         except Exception as e:
             self._on_ui(self._on_failure, str(e))
         finally:
             if logger:
                 close_logger(logger)
-            self._worker_running = False
             self._on_ui(self._on_worker_done)
 
-    def _on_success(self, output_path, log_path):
+    def _on_success(self, output_path, log_path, file_count):
         total = int(float(self.progress.cget("maximum")))
         self._update_progress(total, total, "Done")
         self._set_result(
-            f"LD821 combine done — {len(self.matched_files)} file(s)\n"
+            f"LD821 combine done — {file_count} file(s)\n"
             f"Output: {output_path}\n"
             f"Log: {log_path}",
             ok=True,
@@ -377,7 +388,7 @@ class LD821CombineApp(tk.Tk):
         messagebox.showinfo(
             "LD821 Combine — Complete",
             f"LD821 Time History Combiner finished successfully.\n\n"
-            f"Combined {len(self.matched_files)} file(s).\n\nOutput saved to:\n{output_path}"
+            f"Combined {file_count} file(s).\n\nOutput saved to:\n{output_path}"
         )
 
     def _on_failure(self, error):
@@ -389,7 +400,8 @@ class LD821CombineApp(tk.Tk):
         )
 
     def _on_worker_done(self):
-        self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+        self._worker_running = False
+        self._set_busy(False)
         if float(self.progress.cget("value")) < float(self.progress.cget("maximum")):
             self._reset_progress()
 
