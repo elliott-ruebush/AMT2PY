@@ -17,6 +17,7 @@ from shared_gui_components import (
     create_file_logger,
     pack_combine_layout,
 )
+from ld821_spl_schema import LD821_COMBINED_BASENAME, LD821_HEADER_MARKER
 
 # Compile regex pattern to match: ...Time History[ optional number ].csv
 TIME_HISTORY_PATTERN = re.compile(r'Time History(?:\s*\d+)?\.csv$', re.IGNORECASE)
@@ -118,6 +119,11 @@ def process_slm_files(selected_files: list, sitename: str, logger: logging.Logge
     # Write CSV
     data.to_csv(output_path, index=False, quoting=csv.QUOTE_NONE, escapechar='\\')
     logger.info(f"Output written: {output_path}")
+    logger.info(
+        f"NVSPL hint: browse this file in ld821_to_nvspl.py — SITE_ID autofill expects "
+        f"prefix before _{LD821_COMBINED_BASENAME!r} (e.g. {sitename!r}); "
+        f"header must include {LD821_HEADER_MARKER!r}"
+    )
     logger.info("----- Combine SLM Time History run completed -----")
     return output_path
 

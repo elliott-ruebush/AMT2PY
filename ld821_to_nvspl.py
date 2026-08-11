@@ -16,6 +16,21 @@ from shared_gui_components import (
     create_file_logger,
     close_logger,
 )
+from feathermc_met_schema import (
+    FEATHERMC_COMBINED_TIMESTAMP,
+    FEATHERMC_WIND_GUST,
+    is_feathermc_combined_header,
+    infer_feathermc_met_gui_indices,
+    feathermc_met_runtime_indices,
+)
+from ld821_spl_schema import (
+    LD821_COMBINED_BASENAME,
+    LD821_HEADER_MARKER,
+    LD821_TIMESTAMP_FMT,
+    infer_spl_gui_defaults,
+    validate_ld821_header,
+)
+from csv_schema_utils import header_columns
 
 # ==============================================================================
 # 1. CORE PROCESSING LOGIC (Preserved & Adapted for GUI Integration)
@@ -45,10 +60,9 @@ COMPASS_TO_DEG = {
     "S":180.0,"SSW":202.5,"SW":225.0,"WSW":247.5,"W":270.0,"WNW":292.5,"NW":315.0,"NNW":337.5
 }
 
-# Defaults for MET CSV produced by FeatherMC_combine.py (Feather MC / CV3 layout).
-# Wind speed is typically column 3 (Gust/Avg); timestamp prefers Date-Time (LOC) when present.
+# Defaults when header auto-fill does not apply (non-combined MET).
 NVSPL_MET_GUI_DEFAULTS = {
-    "MET_TIMESTAMP_IDX": "",       # auto: Date-Time (LOC), or column 5 (Timestamp) on raw CV3
+    "MET_TIMESTAMP_IDX": "",
     "MET_WINDSPD_IDX": "3",
     "MET_WINDDIR_IDX": "None",
     "MET_EXTERNTEMP_IDX": "None",
@@ -97,7 +111,7 @@ def write_hour_file(out_dir: str, site: str, hour_start: datetime, filled_rows):
     return path
 
 def parse_timestamp_ld821(ts_str: str) -> datetime:
-    return datetime.strptime(ts_str.strip(), "%Y-%m-%d %H:%M:%S")
+    return datetime.strptime(ts_str.strip(), LD821_TIMESTAMP_FMT)
 
 def compute_dba_from_bands(bands_33):
     try:
@@ -110,28 +124,22 @@ def compute_dba_from_bands(bands_33):
 
 def parse_ld821_to_day_records(site: str, src_csv: str):
     with open(src_csv, "r", encoding="utf-8", newline="") as f:
-        header_line = None
+        hdr = None
         for line in f:
-            if "Record Type" in line:
-                header_line = line
+            if LD821_HEADER_MARKER in line:
+                hdr = next(csv.reader([line]))
                 break
-        if not header_line:
-            raise RuntimeError("LD821 header line containing 'Record Type' not found.")
+        if not hdr:
+            raise RuntimeError(f"LD821 header line containing {LD821_HEADER_MARKER!r} not found.")
 
-        hdr = next(csv.reader([header_line]))
-        sdateLoc = dbaLoc = dbzLoc = dbcLoc = powerLoc = h12p5Loc = ovrLoc = -100
-        for idx, name in enumerate(hdr):
-            n = name.strip()
-            if "Date" in n: sdateLoc = idx
-            elif n == "LAeq": dbaLoc = idx
-            elif n == "LZeq": dbzLoc = idx
-            elif n == "LCeq": dbcLoc = idx
-            elif n.startswith("External"): powerLoc = idx
-            elif "12.5" in n: h12p5Loc = idx
-            elif "Invalid" in n or n.startswith("OVLD"): ovrLoc = idx
-
-        if not (h12p5Loc > 0 and sdateLoc > 0):
-            raise RuntimeError("LD821 required columns not found (Date and 12.5 band).")
+        col = validate_ld821_header(hdr)
+        sdateLoc = col["sdate_idx"]
+        dbaLoc = col["dba_idx"] if col["dba_idx"] is not None else -100
+        dbzLoc = col["dbz_idx"] if col["dbz_idx"] is not None else -100
+        dbcLoc = col["dbc_idx"] if col["dbc_idx"] is not None else -100
+        powerLoc = col["power_idx"] if col["power_idx"] is not None else -100
+        h12p5Loc = col["h12p5_idx"]
+        ovrLoc = col["ovr_idx"] if col["ovr_idx"] is not None else -100
 
         out_per_day = {}
         current_day = None
@@ -225,51 +233,36 @@ def try_parse_dt_from_two_cols(date_s: str, time_s: str):
     return None
 
 def infer_met_gui_indices(header_row):
-    """Map FeatherMC combined (or CV3) MET header to NVSPL GUI index fields."""
-    hdr_tokens = [str(x or "").strip().lower() for x in (header_row or [])]
-    is_cv3_export = (
-        hdr_tokens
-        and ("plot title" in hdr_tokens[0] or (len(hdr_tokens) > 1 and "feather mc" in hdr_tokens[1]))
-    )
-    result = {
-        "MET_TIMESTAMP_IDX": NVSPL_MET_GUI_DEFAULTS["MET_TIMESTAMP_IDX"],
-        "MET_WINDSPD_IDX": NVSPL_MET_GUI_DEFAULTS["MET_WINDSPD_IDX"],
-        "MET_WINDDIR_IDX": NVSPL_MET_GUI_DEFAULTS["MET_WINDDIR_IDX"],
-        "MET_EXTERNTEMP_IDX": NVSPL_MET_GUI_DEFAULTS["MET_EXTERNTEMP_IDX"],
+    """Fill NVSPL MET index fields from CSV header."""
+    if is_feathermc_combined_header(header_row):
+        inferred = infer_feathermc_met_gui_indices(header_row)
+        return {
+            key: inferred.get(key) or NVSPL_MET_GUI_DEFAULTS.get(key, "")
+            for key in (
+                "MET_TIMESTAMP_IDX",
+                "MET_WINDSPD_IDX",
+                "MET_WINDDIR_IDX",
+                "MET_EXTERNTEMP_IDX",
+            )
+        }
+
+    cols = header_columns(header_row)
+    result = dict(NVSPL_MET_GUI_DEFAULTS)
+
+    # Legacy CV3 desktop export (not FeatherMC combined): exact Timestamp column only.
+    if cols and cols[0] == "Plot Title":
+        if "Timestamp" in cols:
+            result["MET_TIMESTAMP_IDX"] = str(cols.index("Timestamp"))
+
+    return {
+        k: result[k]
+        for k in (
+            "MET_TIMESTAMP_IDX",
+            "MET_WINDSPD_IDX",
+            "MET_WINDDIR_IDX",
+            "MET_EXTERNTEMP_IDX",
+        )
     }
-
-    for i, h in enumerate(hdr_tokens):
-        if "date-time (loc)" in h:
-            result["MET_TIMESTAMP_IDX"] = str(i)
-            break
-    if not result["MET_TIMESTAMP_IDX"]:
-        for i, h in enumerate(hdr_tokens):
-            if h == "timestamp" or h.endswith(" timestamp"):
-                result["MET_TIMESTAMP_IDX"] = str(i)
-                break
-
-    if not is_cv3_export:
-        for i, h in enumerate(hdr_tokens):
-            if "gust" in h:
-                result["MET_WINDSPD_IDX"] = str(i)
-                break
-        else:
-            for i, h in enumerate(hdr_tokens):
-                if h == "spd" or "speed" in h or h == "avg":
-                    result["MET_WINDSPD_IDX"] = str(i)
-                    break
-
-    for i, h in enumerate(hdr_tokens):
-        if "dir" in h and "time" not in h and "date" not in h:
-            result["MET_WINDDIR_IDX"] = str(i)
-            break
-
-    for i, h in enumerate(hdr_tokens):
-        if "temp" in h or "adc1" in h:
-            result["MET_EXTERNTEMP_IDX"] = str(i)
-            break
-
-    return result
 
 def auto_detect_met_indices(rows, user_ts_idx, user_spd_idx, user_dir_idx, user_tmp_idx):
     header = rows[0] if rows else []
@@ -282,40 +275,26 @@ def auto_detect_met_indices(rows, user_ts_idx, user_spd_idx, user_dir_idx, user_
         "source": "GENERIC_CSV"
     }
 
-    is_mx1105 = any("adc1" in h or "adc2" in h for h in hdr_tokens)
-    has_dir_hdr = any("dir" in h for h in hdr_tokens)
-    has_spd_hdr = any("spd" in h or "speed" in h or "gust" in h for h in hdr_tokens)
-    is_feathermc_combined = any("date-time (loc)" in h for h in hdr_tokens)
+    is_feathermc_combined = is_feathermc_combined_header(header)
 
     if is_feathermc_combined:
         schema["source"] = "FEATHERMC_COMBINED"
+        exact = feathermc_met_runtime_indices(header)
         if schema["ts_idx"] is None:
-            for i, h in enumerate(hdr_tokens):
-                if "date-time (loc)" in h:
-                    schema["ts_idx"] = i
-                    break
+            schema["ts_idx"] = exact["ts_idx"]
         if schema["spd_idx"] is None:
-            for i, h in enumerate(hdr_tokens):
-                if "gust" in h:
-                    schema["spd_idx"] = i
-                    break
-            if schema["spd_idx"] is None:
-                for i, h in enumerate(hdr_tokens):
-                    if "spd" in h or "speed" in h or h == "avg":
-                        schema["spd_idx"] = i
-                        break
+            schema["spd_idx"] = exact["spd_idx"]
         if schema["dir_idx"] is None:
-            for i, h in enumerate(hdr_tokens):
-                if "dir" in h and "time" not in h:
-                    schema["dir_idx"] = i
-                    break
+            schema["dir_idx"] = exact["dir_idx"]
         if schema["tmp_idx"] is None:
-            for i, h in enumerate(hdr_tokens):
-                if "temp" in h or "adc1" in h:
-                    schema["tmp_idx"] = i
-                    break
+            schema["tmp_idx"] = exact["tmp_idx"]
+        return schema
 
-    elif is_mx1105:
+    is_mx1105 = any("adc1" in h or "adc2" in h for h in hdr_tokens)
+    has_dir_hdr = any("dir" in h for h in hdr_tokens)
+    has_spd_hdr = any("spd" in h or "speed" in h or "gust" in h for h in hdr_tokens)
+
+    if is_mx1105:
         schema["source"] = "MX1105_CSV"
         if schema["tmp_idx"] is None:
             for i, h in enumerate(hdr_tokens):
@@ -724,7 +703,7 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
         grp_paths = ttk.LabelFrame(content, text=" File Paths & Site Info ", padding="10")
         grp_paths.pack(fill=tk.X, pady=5)
 
-        self._create_path_row(grp_paths, 0, "INPUT_CSV", "Input SPL CSV:", "Navigate to combined SPL csv", is_file=True)
+        self._create_path_row(grp_paths, 0, "INPUT_CSV", "Input SPL CSV:", f"Combined {{site}}_{LD821_COMBINED_BASENAME} — SITE_ID autofill on browse", is_file=True)
         self._create_path_row(grp_paths, 1, "OUTPUT_DIR", "Output Folder:", "Navigate to NVSPL folder", is_file=False)
         self._create_entry_row(grp_paths, 2, "SITE_ID", "Site ID:", "Typically park code and three digit number (ex. CARE001)")
 
@@ -734,8 +713,8 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
 
         self._create_combo_row(grp_met, 0, "MERGE_MET", "Merge MET Data:", ["True", "False"], "Do you want to merge met and spl data?")
         self._create_path_row(grp_met, 1, "MET_CSV_PATH", "MET Data CSV:", "Navigate to combined wind dataset", is_file=True)
-        self._create_entry_row(grp_met, 2, "MET_TIMESTAMP_IDX", "Timestamp Col Index:", "0-based; auto-filled from Date-Time (LOC) when you browse combined MET CSV")
-        self._create_entry_row(grp_met, 3, "MET_WINDSPD_IDX", "Wind Speed Col Index:", "0-based Gust/Spd column (default 3 for Feather MC)")
+        self._create_entry_row(grp_met, 2, "MET_TIMESTAMP_IDX", "Timestamp Col Index:", f"auto: exact match on {FEATHERMC_COMBINED_TIMESTAMP!r}")
+        self._create_entry_row(grp_met, 3, "MET_WINDSPD_IDX", "Wind Speed Col Index:", f"auto: exact match on {FEATHERMC_WIND_GUST[0]!r} (or {FEATHERMC_WIND_GUST[1]!r})")
         self._create_entry_row(grp_met, 4, "MET_WINDDIR_IDX", "Wind Dir Col Index:", "optional; auto-filled from header when present")
         self._create_entry_row(grp_met, 5, "MET_EXTERNTEMP_IDX", "Temp Col Index:", "external temp column index (optional)")
 
@@ -792,7 +771,9 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
                 res = filedialog.askdirectory()
             if res:
                 var.set(res)
-                if key == "MET_CSV_PATH":
+                if key == "INPUT_CSV":
+                    self._apply_spl_csv_defaults(res)
+                elif key == "MET_CSV_PATH":
                     self._apply_met_csv_defaults(res)
 
         btn = ttk.Button(parent, text="Browse...", width=10, command=browse)
@@ -816,6 +797,18 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
         for k, v in defaults.items():
             if k in self.vars:
                 self.vars[k].set(v)
+
+    def _apply_spl_csv_defaults(self, csv_path):
+        """Fill SITE_ID (and OUTPUT_DIR if empty) from ld821_combine filename."""
+        try:
+            inferred = infer_spl_gui_defaults(csv_path)
+            if inferred.get("SITE_ID") and "SITE_ID" in self.vars:
+                self.vars["SITE_ID"].set(inferred["SITE_ID"])
+            if inferred.get("OUTPUT_DIR") and "OUTPUT_DIR" in self.vars:
+                if not self.vars["OUTPUT_DIR"].get().strip():
+                    self.vars["OUTPUT_DIR"].set(inferred["OUTPUT_DIR"])
+        except Exception:
+            pass
 
     def _apply_met_csv_defaults(self, csv_path):
         """Fill MET column indices from FeatherMC combined CSV header."""

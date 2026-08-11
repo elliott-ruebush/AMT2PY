@@ -18,6 +18,7 @@ from shared_gui_components import (
     create_file_logger,
     pack_combine_layout,
 )
+from feathermc_met_schema import FEATHERMC_COMBINED_TIMESTAMP, FEATHERMC_WIND_GUST
 
 # Timezone definitions
 COMMON_TZS = [
@@ -203,9 +204,11 @@ def export_data(df: pd.DataFrame, output_dir: str, serial: str, logger: logging.
     logger.info(f"All columns written to output: {list(df.columns)}")
     if "Date-Time (LOC)" in df.columns:
         loc_i = list(df.columns).index("Date-Time (LOC)")
+        gust_name = next((n for n in FEATHERMC_WIND_GUST if n in df.columns), FEATHERMC_WIND_GUST[0])
+        gust_i = list(df.columns).index(gust_name) if gust_name in df.columns else "?"
         logger.info(
-            f"NVSPL merge hint: use MET timestamp column {loc_i} (Date-Time (LOC)); "
-            "wind speed often column 3 (Gust/Avg) — auto-filled when browsing this file in ld821_to_nvspl.py"
+            f"NVSPL merge hint: timestamp col {loc_i} ({FEATHERMC_COMBINED_TIMESTAMP!r}), "
+            f"wind gust col {gust_i} ({gust_name!r}) — auto-filled in ld821_to_nvspl.py"
         )
     logger.info(f"Output written: {output_path}")
     logger.info("----- FeatherMC wind clean prep run completed -----")
