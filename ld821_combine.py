@@ -17,7 +17,12 @@ from shared_gui_components import (
     create_file_logger,
     pack_combine_layout,
 )
-from schemas.ld821_spl import LD821_COMBINED_BASENAME, LD821_HEADER_MARKER
+from schemas.ld821_spl import (
+    LD821_COMBINED_BASENAME,
+    LD821_HEADER_MARKER,
+    is_ld821_time_history_header,
+    ld821_csv_header_line_index,
+)
 from schemas.utils import normalize_gui_path
 
 # Compile regex pattern to match: ...Time History[ optional number ].csv
@@ -63,6 +68,25 @@ def find_time_column_and_series(df: pd.DataFrame):
         c = df.columns[0]
     return c, pd.to_datetime(df[c], errors='coerce')
 
+def read_time_history_csv(path: str, logger: logging.Logger) -> pd.DataFrame:
+    """Read G4 Time History CSV, skipping metadata lines before Record Type header."""
+    skip = ld821_csv_header_line_index(path)
+    if skip is None:
+        raise ValueError(
+            f"Could not find G4 header ({LD821_HEADER_MARKER!r}) in {os.path.basename(path)}"
+        )
+    if skip:
+        logger.info(f"Skipping {skip} preamble line(s) before G4 header in {os.path.basename(path)}")
+        df = pd.read_csv(path, skiprows=range(skip), header=0, encoding="utf-8-sig")
+    else:
+        df = pd.read_csv(path, encoding="utf-8-sig")
+    if not is_ld821_time_history_header(list(df.columns)):
+        preview = ", ".join(str(c) for c in list(df.columns)[:8])
+        raise ValueError(
+            f"Columns after reading {os.path.basename(path)} do not look like G4 Time History: {preview}"
+        )
+    return df
+
 def process_slm_files(selected_files: list, sitename: str, logger: logging.Logger, output_dir: str, progress_callback=None):
     n = len(selected_files)
     total = n + 2
@@ -82,7 +106,7 @@ def process_slm_files(selected_files: list, sitename: str, logger: logging.Logge
     for i, f in enumerate(selected_files):
         report(i + 1, f"Reading file {i + 1} of {n}…")
         try:
-            df = pd.read_csv(f)
+            df = read_time_history_csv(f, logger)
             dfs.append(df)
             logger.info(f"Read OK: {f} | Rows: {len(df)} | Columns: {list(df.columns)}")
         except Exception as e:

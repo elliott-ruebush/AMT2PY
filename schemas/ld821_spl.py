@@ -135,3 +135,12 @@ def infer_spl_gui_defaults(csv_path):
         "SITE_ID": site,
         "OUTPUT_DIR": normalize_gui_path(output_dir),
     }
+
+
+def ld821_csv_header_line_index(path):
+    """0-based line index of the G4 header row containing Record Type, or None."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        for i, line in enumerate(f):
+            if LD821_HEADER_MARKER in line:
+                return i
+    return None

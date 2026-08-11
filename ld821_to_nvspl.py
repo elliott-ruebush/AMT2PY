@@ -19,9 +19,10 @@ from shared_gui_components import (
 from schemas.feathermc_met import (
     FEATHERMC_COMBINED_TIMESTAMP,
     FEATHERMC_WIND_GUST,
-    is_feathermc_combined_header,
-    infer_feathermc_met_gui_indices,
+    fuzzy_met_column_indices,
     feathermc_met_runtime_indices,
+    infer_feathermc_met_gui_indices,
+    is_feathermc_combined_header,
 )
 from schemas.ld821_spl import (
     LD821_COMBINED_BASENAME,
@@ -247,12 +248,21 @@ def infer_met_gui_indices(header_row):
         }
 
     cols = header_columns(header_row)
+    is_cv3_export = bool(cols) and cols[0] == "Plot Title"
+    fuzzy = fuzzy_met_column_indices(header_row, infer_wind=not is_cv3_export)
     result = dict(NVSPL_MET_GUI_DEFAULTS)
 
-    # Legacy CV3 desktop export (not FeatherMC combined): exact Timestamp column only.
-    if cols and cols[0] == "Plot Title":
-        if "Timestamp" in cols:
-            result["MET_TIMESTAMP_IDX"] = str(cols.index("Timestamp"))
+    if fuzzy["ts_idx"] is not None:
+        result["MET_TIMESTAMP_IDX"] = str(fuzzy["ts_idx"])
+    elif is_cv3_export and "Timestamp" in cols:
+        result["MET_TIMESTAMP_IDX"] = str(cols.index("Timestamp"))
+
+    if fuzzy["spd_idx"] is not None:
+        result["MET_WINDSPD_IDX"] = str(fuzzy["spd_idx"])
+    if fuzzy["dir_idx"] is not None:
+        result["MET_WINDDIR_IDX"] = str(fuzzy["dir_idx"])
+    if fuzzy["tmp_idx"] is not None:
+        result["MET_EXTERNTEMP_IDX"] = str(fuzzy["tmp_idx"])
 
     return {
         k: result[k]
@@ -276,6 +286,9 @@ def auto_detect_met_indices(rows, user_ts_idx, user_spd_idx, user_dir_idx, user_
     }
 
     is_feathermc_combined = is_feathermc_combined_header(header)
+    is_mx1105 = any("adc1" in h or "adc2" in h for h in hdr_tokens)
+    has_dir_hdr = any("dir" in h for h in hdr_tokens)
+    has_spd_hdr = any("spd" in h or "speed" in h or "gust" in h for h in hdr_tokens)
 
     if is_feathermc_combined:
         schema["source"] = "FEATHERMC_COMBINED"
@@ -288,13 +301,8 @@ def auto_detect_met_indices(rows, user_ts_idx, user_spd_idx, user_dir_idx, user_
             schema["dir_idx"] = exact["dir_idx"]
         if schema["tmp_idx"] is None:
             schema["tmp_idx"] = exact["tmp_idx"]
-        return schema
 
-    is_mx1105 = any("adc1" in h or "adc2" in h for h in hdr_tokens)
-    has_dir_hdr = any("dir" in h for h in hdr_tokens)
-    has_spd_hdr = any("spd" in h or "speed" in h or "gust" in h for h in hdr_tokens)
-
-    if is_mx1105:
+    elif is_mx1105:
         schema["source"] = "MX1105_CSV"
         if schema["tmp_idx"] is None:
             for i, h in enumerate(hdr_tokens):
