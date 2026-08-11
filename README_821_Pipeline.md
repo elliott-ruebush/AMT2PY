@@ -106,7 +106,7 @@ python ld821_to_nvspl.py
 1. **Input CSV:** the combined file from step 2.  
 2. **Output directory:** where you want hourly NVSPL files (e.g. a new `NVSPL/` folder in the deployment).  
 3. **Site ID:** same site code used earlier.  
-4. If merging wind, set **Merge MET Data** to True, browse to the cleaned MET CSV from step 1, and check the column indices match your file (defaults assume timestamp in column 5, wind speed in column 3).  
+4. If merging wind, set **Merge MET Data** to True and browse to the cleaned MET CSV from step 1. Column indices auto-fill from the header (`Date-Time (LOC)` for timestamp, Gust/Spd for wind speed); defaults assume Feather MC layout (speed column 3, `bin` fill, m/s units).
 5. **Fill method:** `bin` repeats each MET sample across its interval; `forward` and `nearest` are alternatives if bin does not look right.  
 6. Run.
 

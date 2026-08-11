@@ -37,27 +37,29 @@ def setup_logger(output_dir: str, sitename: str, selected_folder: str):
     )
 
 def find_time_column(df: pd.DataFrame) -> str:
+    col, _ = find_time_column_and_series(df)
+    return col
+
+def find_time_column_and_series(df: pd.DataFrame):
     # First pass: columns that look like time/date/timestamp
     name_candidates = [c for c in df.columns if re.search(r'(time|date|timestamp)', str(c), re.IGNORECASE)]
     for c in name_candidates:
-        try:
-            pd.to_datetime(df[c], errors='raise')
-            return c
-        except Exception:
-            continue
+        parsed = pd.to_datetime(df[c], errors='coerce')
+        if parsed.notna().any():
+            return c, parsed
 
     # Second pass: try to parse each column as datetime
     for c in df.columns:
-        try:
-            pd.to_datetime(df[c], errors='raise')
-            return c
-        except Exception:
-            continue
+        parsed = pd.to_datetime(df[c], errors='coerce')
+        if parsed.notna().any():
+            return c, parsed
 
     # Fallbacks
     if len(df.columns) >= 2:
-        return df.columns[1]
-    return df.columns[0]
+        c = df.columns[1]
+    else:
+        c = df.columns[0]
+    return c, pd.to_datetime(df[c], errors='coerce')
 
 def process_slm_files(selected_files: list, sitename: str, logger: logging.Logger, output_dir: str, progress_callback=None):
     n = len(selected_files)
@@ -92,10 +94,9 @@ def process_slm_files(selected_files: list, sitename: str, logger: logging.Logge
     logger.info(f"Combined DataFrame rows: {len(data)}; columns: {list(data.columns)}")
 
     # Sort by time column
-    time_col = find_time_column(data)
+    time_col, parsed = find_time_column_and_series(data)
     logger.info(f"Detected time column: '{time_col}'")
 
-    parsed = pd.to_datetime(data[time_col], errors='coerce')
     nat_count = parsed.isna().sum()
     logger.info(f"Non-parsable timestamps (NaT) before sort: {nat_count}")
 

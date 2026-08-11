@@ -45,6 +45,31 @@ COMPASS_TO_DEG = {
     "S":180.0,"SSW":202.5,"SW":225.0,"WSW":247.5,"W":270.0,"WNW":292.5,"NW":315.0,"NNW":337.5
 }
 
+# Defaults for MET CSV produced by FeatherMC_combine.py (Feather MC / CV3 layout).
+# Wind speed is typically column 3 (Gust/Avg); timestamp prefers Date-Time (LOC) when present.
+NVSPL_MET_GUI_DEFAULTS = {
+    "MET_TIMESTAMP_IDX": "",       # auto: Date-Time (LOC), or column 5 (Timestamp) on raw CV3
+    "MET_WINDSPD_IDX": "3",
+    "MET_WINDDIR_IDX": "None",
+    "MET_EXTERNTEMP_IDX": "None",
+    "MET_SAMPLE_STAMP": "start",    # 10 s Feather MC sample intervals
+    "FILL_METHOD": "bin",
+    "NEAREST_TOLERANCE_SEC": "2",
+    "BACKFILL_BEFORE_FIRST": "False",
+    "MET_SPEED_UNITS": "mps",
+    "CONVERT_MPH_TO_MPS": "False",
+    "MET_INVALID_SPEED": "39.9",    # common invalid/sentinel reading on field loggers
+}
+
+_RE_MET_MDY = re.compile(
+    r'(?P<mdy>\b\d{1,2}/\d{1,2}/\d{2,4})\s+'
+    r'(?P<hms>\d{1,2}:\d{2}(?::\d{2})?)\s*'
+    r'(?P<ampm>\bAM\b|\bPM\b|\bam\b|\bpm\b)?'
+)
+_RE_MET_ISO = re.compile(
+    r'(?P<iso>\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})?)'
+)
+
 def ensure_dir(path: str):
     if path and not os.path.exists(path):
         os.makedirs(path)
@@ -85,81 +110,72 @@ def compute_dba_from_bands(bands_33):
 
 def parse_ld821_to_day_records(site: str, src_csv: str):
     with open(src_csv, "r", encoding="utf-8", newline="") as f:
-        raw = f.read().splitlines()
+        header_line = None
+        for line in f:
+            if "Record Type" in line:
+                header_line = line
+                break
+        if not header_line:
+            raise RuntimeError("LD821 header line containing 'Record Type' not found.")
 
-    header_idx = -1
-    for i, line in enumerate(raw):
-        if "Record Type" in line:
-            header_idx = i
-            break
-    if header_idx < 0:
-        raise RuntimeError("LD821 header line containing 'Record Type' not found.")
+        hdr = next(csv.reader([header_line]))
+        sdateLoc = dbaLoc = dbzLoc = dbcLoc = powerLoc = h12p5Loc = ovrLoc = -100
+        for idx, name in enumerate(hdr):
+            n = name.strip()
+            if "Date" in n: sdateLoc = idx
+            elif n == "LAeq": dbaLoc = idx
+            elif n == "LZeq": dbzLoc = idx
+            elif n == "LCeq": dbcLoc = idx
+            elif n.startswith("External"): powerLoc = idx
+            elif "12.5" in n: h12p5Loc = idx
+            elif "Invalid" in n or n.startswith("OVLD"): ovrLoc = idx
 
-    hdr = next(csv.reader([raw[header_idx]]))
-    sdateLoc = dbaLoc = dbzLoc = dbcLoc = powerLoc = h12p5Loc = ovrLoc = -100
-    for idx, name in enumerate(hdr):
-        n = name.strip()
-        if "Date" in n: sdateLoc = idx
-        elif n == "LAeq": dbaLoc = idx
-        elif n == "LZeq": dbzLoc = idx
-        elif n == "LCeq": dbcLoc = idx
-        elif n.startswith("External"): powerLoc = idx
-        elif "12.5" in n: h12p5Loc = idx
-        elif "Invalid" in n or n.startswith("OVLD"): ovrLoc = idx
+        if not (h12p5Loc > 0 and sdateLoc > 0):
+            raise RuntimeError("LD821 required columns not found (Date and 12.5 band).")
 
-    if not (h12p5Loc > 0 and sdateLoc > 0):
-        raise RuntimeError("LD821 required columns not found (Date and 12.5 band).")
+        out_per_day = {}
+        current_day = None
 
-    sample_row = next(csv.reader([raw[header_idx + 1]]))
-    day_switch = parse_timestamp_ld821(sample_row[sdateLoc])
-    current_day = day_switch.strftime("%Y-%m-%d")
-    out_per_day = {current_day: []}
+        for row in csv.reader(f):
+            if not row or len(row) <= h12p5Loc + 32:
+                continue
 
-    for l_idx in range(header_idx + 1, len(raw)):
-        row_str = raw[l_idx]
-        if not row_str.strip():
-            continue
-        row = next(csv.reader([row_str]))
-        if len(row) <= h12p5Loc + 32:
-            continue
+            temp_ts = parse_timestamp_ld821(row[sdateLoc])
+            row_day = temp_ts.strftime("%Y-%m-%d")
+            if row_day != current_day:
+                current_day = row_day
+                out_per_day.setdefault(current_day, [])
 
-        temp_ts = parse_timestamp_ld821(row[sdateLoc])
-        row_day = temp_ts.strftime("%Y-%m-%d")
-        if row_day != current_day:
-            current_day = row_day
-            out_per_day.setdefault(current_day, [])
+            bands_33 = [row[h12p5Loc + i].strip() for i in range(33)]
 
-        bands_33 = [row[h12p5Loc + i].strip() for i in range(33)]
+            valid_line = True
+            try:
+                for v in bands_33:
+                    if float(v) < -50.0:
+                        valid_line = False
+                        break
+            except Exception:
+                valid_line = False
+            if not valid_line:
+                continue
 
-        valid_line = True
-        try:
-            for v in bands_33:
-                if float(v) < -50.0:
-                    valid_line = False
-                    break
-        except Exception:
-            valid_line = False
-        if not valid_line:
-            continue
+            dbA = row[dbaLoc].strip() if dbaLoc > 0 else ""
+            dbF = row[dbzLoc].strip() if dbzLoc > 0 else ""
+            dbC = row[dbcLoc].strip() if dbcLoc > 0 else ""
+            volt = row[powerLoc].strip() if powerLoc > 0 else ""
+            status = ""
+            if ovrLoc > 0 and row[ovrLoc].strip() != "":
+                status = "9911"
 
-        dbA = row[dbaLoc].strip() if dbaLoc > 0 else ""
-        dbF = row[dbzLoc].strip() if dbzLoc > 0 else ""
-        dbC = row[dbcLoc].strip() if dbcLoc > 0 else ""
-        volt = row[powerLoc].strip() if powerLoc > 0 else ""
-        status = ""
-        if ovrLoc > 0 and row[ovrLoc].strip() != "":
-            status = "9911"
+            if (dbaLoc < 0) or (dbA == ""):
+                dbA = compute_dba_from_bands(bands_33)
 
-        if (dbaLoc < 0) or (dbA == ""):
-            dbA = compute_dba_from_bands(bands_33)
+            record = [site, temp_ts] + bands_33 + [dbA, dbC, dbF, volt] + [""] * 13 + [status]
 
-        stime = temp_ts.strftime("%Y-%m-%d %H:%M:%S") + ".000"
-        record = [site, stime] + bands_33 + [dbA, dbC, dbF, volt] + [""] * 13 + [status]
+            if len(record) != len(NVSPL_HEADER):
+                record = (record + [""] * (len(NVSPL_HEADER) - len(record)))[:len(NVSPL_HEADER)]
 
-        if len(record) != len(NVSPL_HEADER):
-            record = (record + [""] * (len(NVSPL_HEADER) - len(record)))[:len(NVSPL_HEADER)]
-
-        out_per_day[current_day].append(record)
+            out_per_day[current_day].append(record)
 
     return out_per_day
 
@@ -167,12 +183,9 @@ def parse_daily_file_to_hours(site: str, day_records: list):
     if not day_records:
         return []
 
-    def parse_stime(st):
-        return datetime.strptime(st, "%Y-%m-%d %H:%M:%S.000")
-
     hours = {}
     for rec in day_records:
-        dt_val = parse_stime(rec[1])
+        dt_val = rec[1] if isinstance(rec[1], datetime) else datetime.strptime(rec[1], "%Y-%m-%d %H:%M:%S.000")
         hour_start = dt_val.replace(minute=0, second=0, microsecond=0)
         key = hour_start.strftime("%Y-%m-%d %H")
         if key not in hours:
@@ -211,6 +224,53 @@ def try_parse_dt_from_two_cols(date_s: str, time_s: str):
         except Exception: pass
     return None
 
+def infer_met_gui_indices(header_row):
+    """Map FeatherMC combined (or CV3) MET header to NVSPL GUI index fields."""
+    hdr_tokens = [str(x or "").strip().lower() for x in (header_row or [])]
+    is_cv3_export = (
+        hdr_tokens
+        and ("plot title" in hdr_tokens[0] or (len(hdr_tokens) > 1 and "feather mc" in hdr_tokens[1]))
+    )
+    result = {
+        "MET_TIMESTAMP_IDX": NVSPL_MET_GUI_DEFAULTS["MET_TIMESTAMP_IDX"],
+        "MET_WINDSPD_IDX": NVSPL_MET_GUI_DEFAULTS["MET_WINDSPD_IDX"],
+        "MET_WINDDIR_IDX": NVSPL_MET_GUI_DEFAULTS["MET_WINDDIR_IDX"],
+        "MET_EXTERNTEMP_IDX": NVSPL_MET_GUI_DEFAULTS["MET_EXTERNTEMP_IDX"],
+    }
+
+    for i, h in enumerate(hdr_tokens):
+        if "date-time (loc)" in h:
+            result["MET_TIMESTAMP_IDX"] = str(i)
+            break
+    if not result["MET_TIMESTAMP_IDX"]:
+        for i, h in enumerate(hdr_tokens):
+            if h == "timestamp" or h.endswith(" timestamp"):
+                result["MET_TIMESTAMP_IDX"] = str(i)
+                break
+
+    if not is_cv3_export:
+        for i, h in enumerate(hdr_tokens):
+            if "gust" in h:
+                result["MET_WINDSPD_IDX"] = str(i)
+                break
+        else:
+            for i, h in enumerate(hdr_tokens):
+                if h == "spd" or "speed" in h or h == "avg":
+                    result["MET_WINDSPD_IDX"] = str(i)
+                    break
+
+    for i, h in enumerate(hdr_tokens):
+        if "dir" in h and "time" not in h and "date" not in h:
+            result["MET_WINDDIR_IDX"] = str(i)
+            break
+
+    for i, h in enumerate(hdr_tokens):
+        if "temp" in h or "adc1" in h:
+            result["MET_EXTERNTEMP_IDX"] = str(i)
+            break
+
+    return result
+
 def auto_detect_met_indices(rows, user_ts_idx, user_spd_idx, user_dir_idx, user_tmp_idx):
     header = rows[0] if rows else []
     hdr_tokens = [str(x or "").strip().lower() for x in header]
@@ -225,8 +285,37 @@ def auto_detect_met_indices(rows, user_ts_idx, user_spd_idx, user_dir_idx, user_
     is_mx1105 = any("adc1" in h or "adc2" in h for h in hdr_tokens)
     has_dir_hdr = any("dir" in h for h in hdr_tokens)
     has_spd_hdr = any("spd" in h or "speed" in h or "gust" in h for h in hdr_tokens)
+    is_feathermc_combined = any("date-time (loc)" in h for h in hdr_tokens)
 
-    if is_mx1105:
+    if is_feathermc_combined:
+        schema["source"] = "FEATHERMC_COMBINED"
+        if schema["ts_idx"] is None:
+            for i, h in enumerate(hdr_tokens):
+                if "date-time (loc)" in h:
+                    schema["ts_idx"] = i
+                    break
+        if schema["spd_idx"] is None:
+            for i, h in enumerate(hdr_tokens):
+                if "gust" in h:
+                    schema["spd_idx"] = i
+                    break
+            if schema["spd_idx"] is None:
+                for i, h in enumerate(hdr_tokens):
+                    if "spd" in h or "speed" in h or h == "avg":
+                        schema["spd_idx"] = i
+                        break
+        if schema["dir_idx"] is None:
+            for i, h in enumerate(hdr_tokens):
+                if "dir" in h and "time" not in h:
+                    schema["dir_idx"] = i
+                    break
+        if schema["tmp_idx"] is None:
+            for i, h in enumerate(hdr_tokens):
+                if "temp" in h or "adc1" in h:
+                    schema["tmp_idx"] = i
+                    break
+
+    elif is_mx1105:
         schema["source"] = "MX1105_CSV"
         if schema["tmp_idx"] is None:
             for i, h in enumerate(hdr_tokens):
@@ -300,12 +389,12 @@ def _sniff_delimiter(sample_text):
 def _extract_dt_string(s: str):
     if not s: return None
     s = s.replace("\ufeff", "").replace("\xa0", " ").strip().strip('"').strip("'")
-    m = re.search(r'(?P<mdy>\b\d{1,2}/\d{1,2}/\d{2,4})\s+(?P<hms>\d{1,2}:\d{2}(?::\d{2})?)\s*(?P<ampm>\bAM\b|\bPM\b|\bam\b|\bpm\b)?', s)
+    m = _RE_MET_MDY.search(s)
     if m:
         dt_str = f"{m.group('mdy')} {m.group('hms')}"
         if m.group('ampm'): dt_str += f" {m.group('ampm').upper()}"
         return dt_str
-    m = re.search(r'(?P<iso>\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})?)', s)
+    m = _RE_MET_ISO.search(s)
     return m.group('iso') if m else None
 
 def _parse_dt_flex(s: str):
@@ -350,12 +439,14 @@ def _norm_temp(val: str) -> str:
     try: return f"{float(str(val).strip()):.1f}"
     except Exception: return ""
 
-def _load_met_samples_by_schema(csv_path: str, schema: dict, units: str, convert_mph_to_mps: bool, invalid_set: set, log_func):
+def _read_met_data_rows(csv_path: str):
     enc = _sniff_encoding(csv_path)
     sample_bytes = b""
     try:
-        with open(csv_path, "rb") as fb: sample_bytes = fb.read(65536)
-    except Exception: pass
+        with open(csv_path, "rb") as fb:
+            sample_bytes = fb.read(65536)
+    except Exception:
+        pass
     sample_text = sample_bytes.decode(enc, errors="replace")
     delim = _sniff_delimiter(sample_text)
 
@@ -363,23 +454,38 @@ def _load_met_samples_by_schema(csv_path: str, schema: dict, units: str, convert
     try:
         with open(csv_path, "r", encoding=enc, newline="") as f:
             for row in csv.reader(f, delimiter=delim):
-                if not row: continue
-                first = (row[0] or "").strip()
-                if first.startswith("#") or "Date" in first or "Time" in first or "GMT" in first or "UTC" in first: continue
+                if not row:
+                    continue
                 rows.append(row)
     except Exception:
         with open(csv_path, "r", encoding=enc, errors="replace") as f:
             for line in f:
                 line = line.strip()
-                if not line or "Plot Title" in line or line.startswith("#"): continue
+                if not line:
+                    continue
                 for cand in ("\t", ",", ";"):
                     if cand in line:
                         try:
                             row = next(csv.reader(io.StringIO(line), delimiter=cand))
-                            if row: rows.append(row)
-                        except Exception: pass
+                            if row:
+                                rows.append(row)
+                        except Exception:
+                            pass
                         break
+    return rows
 
+def _met_rows_for_schema(rows):
+    data_rows = []
+    for row in rows:
+        if not row:
+            continue
+        first = (row[0] or "").strip()
+        if first.startswith("#") or "Date" in first or "Time" in first or "GMT" in first or "UTC" in first:
+            continue
+        data_rows.append(row)
+    return data_rows if data_rows else rows
+
+def _parse_met_rows_to_samples(rows, schema: dict, units: str, convert_mph_to_mps: bool, invalid_set: set):
     samples = []
     use_single = schema.get("ts_idx") is not None
     ts_i = schema.get("ts_idx")
@@ -392,14 +498,16 @@ def _load_met_samples_by_schema(csv_path: str, schema: dict, units: str, convert
             dt_val = _parse_dt_flex(row[ts_i]) or try_parse_dt_common(row[ts_i])
         elif di is not None and ti is not None and len(row) > max(di, ti):
             dt_val = try_parse_dt_from_two_cols(row[di], row[ti])
-        if not dt_val: continue
+        if not dt_val:
+            continue
 
         spd = ""
         if spd_i is not None and len(row) > spd_i:
             spd_raw = row[spd_i]
             try:
                 v = float(str(spd_raw).strip())
-                if units.lower() == "mph" and convert_mph_to_mps: v *= 0.44704
+                if units.lower() == "mph" and convert_mph_to_mps:
+                    v *= 0.44704
                 spd = f"{v:.1f}"
             except Exception:
                 spd = _norm_speed(spd_raw, invalid_set)
@@ -410,25 +518,59 @@ def _load_met_samples_by_schema(csv_path: str, schema: dict, units: str, convert
         samples.append((dt_val.replace(microsecond=0), {"spd": spd, "dir": drr, "tmp": tmp}))
 
     samples.sort(key=lambda x: x[0])
+    return samples
+
+def load_met_samples(config, log_func):
+    if not config["MERGE_MET"]:
+        return None
+
+    all_rows = _read_met_data_rows(config["MET_CSV_PATH"])
+    schema = auto_detect_met_indices(
+        all_rows,
+        config["MET_TIMESTAMP_IDX"],
+        config["MET_WINDSPD_IDX"],
+        config["MET_WINDDIR_IDX"],
+        config["MET_EXTERNTEMP_IDX"],
+    )
+    log_func(f"[MET] Source={schema['source']}, TS_idx={schema['ts_idx']}, Spd_idx={schema['spd_idx']}")
+
+    data_rows = _met_rows_for_schema(all_rows)
+    samples = _parse_met_rows_to_samples(
+        data_rows,
+        schema=schema,
+        units=config["MET_SPEED_UNITS"],
+        convert_mph_to_mps=config["CONVERT_MPH_TO_MPS"],
+        invalid_set=config["MET_INVALID_SPEED"],
+    )
     if samples:
         log_func(f"[MET] Loaded {len(samples)} samples.")
     else:
         log_func("[MET] Parsed 0 samples; verify CSV structure.")
     return samples
 
-def _overlay_met_bin(rows_3600: list, hour_start: datetime, samples: list, stamp: str, backfill_before_first: bool, log_func):
-    if not samples: return 0
-    times, vals = [t for (t, _) in samples], [v for (_, v) in samples]
+def _prepare_met_bin_context(samples, stamp: str):
+    times = [t for (t, _) in samples]
+    vals = [v for (_, v) in samples]
     interval = _infer_interval_seconds(times)
     times_shifted = _shift_times_for_stamp(times, interval, stamp)
-
     bins_start = times_shifted
-    bins_end = [times_shifted[i+1] if i+1 < len(times_shifted) else (times_shifted[i] + timedelta(seconds=interval)) for i in range(len(times_shifted))]
+    bins_end = [
+        times_shifted[i + 1] if i + 1 < len(times_shifted)
+        else (times_shifted[i] + timedelta(seconds=interval))
+        for i in range(len(times_shifted))
+    ]
+    return {"bins_start": bins_start, "bins_end": bins_end, "vals": vals}
 
-    updated, j = 0, 0
+def _overlay_met_bin(rows_3600: list, hour_start: datetime, ctx: dict, backfill_before_first: bool, j: int = 0):
+    bins_start, bins_end, vals = ctx["bins_start"], ctx["bins_end"], ctx["vals"]
+    if not bins_start:
+        return 0, j
+
+    updated = 0
     for sec in range(3600):
         t = hour_start + timedelta(seconds=sec)
-        while j < len(bins_start) and t >= bins_end[j]: j += 1
+        while j < len(bins_start) and t >= bins_end[j]:
+            j += 1
         if j < len(bins_start) and bins_start[j] <= t < bins_end[j]:
             v = vals[j]
             if v.get("spd"): rows_3600[sec][39] = v["spd"]
@@ -441,35 +583,38 @@ def _overlay_met_bin(rows_3600: list, hour_start: datetime, samples: list, stamp
             if v.get("dir"): rows_3600[sec][40] = v["dir"]
             if v.get("tmp"): rows_3600[sec][42] = v["tmp"]
             updated += 1
-    log_func(f"[MERGE] bin-fill: updated={updated} secs")
-    return updated
+    return updated, j
 
-def _overlay_met_forward(rows_3600: list, hour_start: datetime, samples: list, log_func):
-    if not samples: return 0
-    times, vals = [t for (t, _) in samples], [v for (_, v) in samples]
-    updated, latest, j = 0, None, 0
+def _overlay_met_forward(rows_3600: list, hour_start: datetime, times: list, vals: list, j: int = 0, latest=None):
+    if not times:
+        return 0, j, latest
+
+    updated = 0
     for sec in range(3600):
         t = hour_start + timedelta(seconds=sec)
         while j < len(times) and times[j] <= t:
-            latest = vals[j]; j += 1
+            latest = vals[j]
+            j += 1
         if latest:
             if latest.get("spd"): rows_3600[sec][39] = latest["spd"]
             if latest.get("dir"): rows_3600[sec][40] = latest["dir"]
             if latest.get("tmp"): rows_3600[sec][42] = latest["tmp"]
             updated += 1
-    log_func(f"[MERGE] forward-fill: updated={updated} secs")
-    return updated
+    return updated, j, latest
 
-def _overlay_met_nearest(rows_3600: list, hour_start: datetime, samples: list, tol_sec: int, log_func):
-    if not samples: return 0
-    mt, mv = [t for (t, _) in samples], [v for (_, v) in samples]
+def _overlay_met_nearest(rows_3600: list, hour_start: datetime, mt: list, mv: list, tol_sec: int):
+    if not mt:
+        return 0
+
     updated = 0
     for sec in range(3600):
         t = hour_start + timedelta(seconds=sec)
         pos = bisect.bisect_left(mt, t)
         candidates = []
-        if pos < len(mt): candidates.append((abs((mt[pos]-t).total_seconds()), mv[pos]))
-        if pos > 0: candidates.append((abs((mt[pos-1]-t).total_seconds()), mv[pos-1]))
+        if pos < len(mt):
+            candidates.append((abs((mt[pos] - t).total_seconds()), mv[pos]))
+        if pos > 0:
+            candidates.append((abs((mt[pos - 1] - t).total_seconds()), mv[pos - 1]))
         if candidates:
             best = min(candidates, key=lambda x: x[0])
             if best[0] <= tol_sec:
@@ -478,38 +623,47 @@ def _overlay_met_nearest(rows_3600: list, hour_start: datetime, samples: list, t
                 if v.get("dir"): rows_3600[sec][40] = v["dir"]
                 if v.get("tmp"): rows_3600[sec][42] = v["tmp"]
                 updated += 1
-    log_func(f"[MERGE] nearest-fill: updated={updated} secs")
     return updated
 
-def merge_met_for_day(hour_bundles, config, log_func):
+def merge_met_for_day(hour_bundles, config, log_func, met_samples=None):
     if not config["MERGE_MET"]:
         return hour_bundles
 
-    raw_rows = read_csv_rows_by_index(config["MET_CSV_PATH"])
-    schema = auto_detect_met_indices(raw_rows, config["MET_TIMESTAMP_IDX"], config["MET_WINDSPD_IDX"], config["MET_WINDDIR_IDX"], config["MET_EXTERNTEMP_IDX"])
-    log_func(f"[MET] Source={schema['source']}, TS_idx={schema['ts_idx']}, Spd_idx={schema['spd_idx']}")
-
-    samples = _load_met_samples_by_schema(
-        config["MET_CSV_PATH"], schema=schema,
-        units=config["MET_SPEED_UNITS"],
-        convert_mph_to_mps=config["CONVERT_MPH_TO_MPS"],
-        invalid_set=config["MET_INVALID_SPEED"],
-        log_func=log_func
-    )
+    samples = met_samples
+    if samples is None:
+        samples = load_met_samples(config, log_func)
     if not samples:
         log_func("[MET] No valid samples parsed.")
         return hour_bundles
 
+    method = config["FILL_METHOD"].lower()
     total_updates = 0
-    for b in hour_bundles:
-        hour_start, rows_3600 = b["start"], b["rows"]
-        method = config["FILL_METHOD"].lower()
-        if method == "bin":
-            total_updates += _overlay_met_bin(rows_3600, hour_start, samples, config["MET_SAMPLE_STAMP"], config["BACKFILL_BEFORE_FIRST"], log_func)
-        elif method == "forward":
-            total_updates += _overlay_met_forward(rows_3600, hour_start, samples, log_func)
-        else:
-            total_updates += _overlay_met_nearest(rows_3600, hour_start, samples, config["NEAREST_TOLERANCE_SEC"], log_func)
+
+    if method == "bin":
+        ctx = _prepare_met_bin_context(samples, config["MET_SAMPLE_STAMP"])
+        j = 0
+        for b in hour_bundles:
+            updated, j = _overlay_met_bin(
+                b["rows"], b["start"], ctx, config["BACKFILL_BEFORE_FIRST"], j
+            )
+            total_updates += updated
+        log_func(f"[MERGE] bin-fill: updated={total_updates} secs across {len(hour_bundles)} hours")
+    elif method == "forward":
+        times = [t for (t, _) in samples]
+        vals = [v for (_, v) in samples]
+        j, latest = 0, None
+        for b in hour_bundles:
+            updated, j, latest = _overlay_met_forward(b["rows"], b["start"], times, vals, j, latest)
+            total_updates += updated
+        log_func(f"[MERGE] forward-fill: updated={total_updates} secs across {len(hour_bundles)} hours")
+    else:
+        mt = [t for (t, _) in samples]
+        mv = [v for (_, v) in samples]
+        for b in hour_bundles:
+            total_updates += _overlay_met_nearest(
+                b["rows"], b["start"], mt, mv, config["NEAREST_TOLERANCE_SEC"]
+            )
+        log_func(f"[MERGE] nearest-fill: updated={total_updates} secs across {len(hour_bundles)} hours")
 
     log_func(f"[MERGE] Total updated NVSPL records: {total_updates}")
     return hour_bundles
@@ -561,22 +715,22 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
 
         self._create_combo_row(grp_met, 0, "MERGE_MET", "Merge MET Data:", ["True", "False"], "Do you want to merge met and spl data?")
         self._create_path_row(grp_met, 1, "MET_CSV_PATH", "MET Data CSV:", "Navigate to combined wind dataset", is_file=True)
-        self._create_entry_row(grp_met, 2, "MET_TIMESTAMP_IDX", "Timestamp Col Index:", "single timestamp column (0-based) of local time in met file")
-        self._create_entry_row(grp_met, 3, "MET_WINDSPD_IDX", "Wind Speed Col Index:", "wind speed column index (avg/gust)")
-        self._create_entry_row(grp_met, 4, "MET_WINDDIR_IDX", "Wind Dir Col Index:", "wind direction column index (optional)")
+        self._create_entry_row(grp_met, 2, "MET_TIMESTAMP_IDX", "Timestamp Col Index:", "0-based; auto-filled from Date-Time (LOC) when you browse combined MET CSV")
+        self._create_entry_row(grp_met, 3, "MET_WINDSPD_IDX", "Wind Speed Col Index:", "0-based Gust/Spd column (default 3 for Feather MC)")
+        self._create_entry_row(grp_met, 4, "MET_WINDDIR_IDX", "Wind Dir Col Index:", "optional; auto-filled from header when present")
         self._create_entry_row(grp_met, 5, "MET_EXTERNTEMP_IDX", "Temp Col Index:", "external temp column index (optional)")
 
         # Strategy and Units Settings Frame
         grp_strat = ttk.LabelFrame(content, text=" Alignment & Units ", padding="10")
         grp_strat.pack(fill=tk.X, pady=5)
 
-        self._create_combo_row(grp_strat, 0, "MET_SAMPLE_STAMP", "Sample Stamp:", ["start", "center", "end"], "")
-        self._create_combo_row(grp_strat, 1, "FILL_METHOD", "Fill Method:", ["bin", "forward", "nearest"], "")
+        self._create_combo_row(grp_strat, 0, "MET_SAMPLE_STAMP", "Sample Stamp:", ["start", "center", "end"], "Feather MC 10 s samples: use start")
+        self._create_combo_row(grp_strat, 1, "FILL_METHOD", "Fill Method:", ["bin", "forward", "nearest"], "bin repeats each MET sample across its interval")
         self._create_entry_row(grp_strat, 2, "NEAREST_TOLERANCE_SEC", "Nearest Tolerance (s):", "")
         self._create_combo_row(grp_strat, 3, "BACKFILL_BEFORE_FIRST", "Backfill Before First:", ["False", "True"], "bin/forward: fill seconds before first MET sample?")
         self._create_combo_row(grp_strat, 4, "MET_SPEED_UNITS", "Wind Speed Units:", ["mps", "mph"], "What are the units for wind speed")
         self._create_combo_row(grp_strat, 5, "CONVERT_MPH_TO_MPS", "Convert MPH to MPS:", ["False", "True"], "")
-        self._create_entry_row(grp_strat, 6, "MET_INVALID_SPEED", "Invalid Speed Entries:", "wipe invalid wind speed entries -> blank (comma separated)")
+        self._create_entry_row(grp_strat, 6, "MET_INVALID_SPEED", "Invalid Speed Entries:", "comma-separated sentinels to blank (e.g. 39.9)")
 
         # Default Value Loading
         self._load_defaults()
@@ -619,6 +773,8 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
                 res = filedialog.askdirectory()
             if res:
                 var.set(res)
+                if key == "MET_CSV_PATH":
+                    self._apply_met_csv_defaults(res)
 
         btn = ttk.Button(parent, text="Browse...", width=10, command=browse)
         btn.grid(row=row, column=2, padx=2, pady=2)
@@ -636,21 +792,25 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
             "SITE_ID": "",
             "MERGE_MET": "False",
             "MET_CSV_PATH": "",
-            "MET_TIMESTAMP_IDX": "",
-            "MET_WINDSPD_IDX": "",
-            "MET_WINDDIR_IDX": "None",
-            "MET_EXTERNTEMP_IDX": "None",
-            "MET_SAMPLE_STAMP": "start",
-            "FILL_METHOD": "bin",
-            "NEAREST_TOLERANCE_SEC": "2",
-            "BACKFILL_BEFORE_FIRST": "False",
-            "MET_SPEED_UNITS": "mps",
-            "CONVERT_MPH_TO_MPS": "False",
-            "MET_INVALID_SPEED": "",
+            **NVSPL_MET_GUI_DEFAULTS,
         }
         for k, v in defaults.items():
             if k in self.vars:
                 self.vars[k].set(v)
+
+    def _apply_met_csv_defaults(self, csv_path):
+        """Fill MET column indices from FeatherMC combined CSV header."""
+        try:
+            rows = _read_met_data_rows(csv_path)
+            if not rows:
+                return
+            inferred = infer_met_gui_indices(rows[0])
+            for key, value in inferred.items():
+                if key in self.vars and value:
+                    self.vars[key].set(value)
+            self.vars["MERGE_MET"].set("True")
+        except Exception:
+            pass
 
     def _append_log(self, message):
         self.txt_log.insert(tk.END, message + "\n")
@@ -732,12 +892,14 @@ class AppGUI(WorkerGuiMixin, tk.Tk):
             total_steps = len(days) + 1
             progress(1, total_steps, f"Parsed {len(days)} day(s)")
 
+            met_samples = load_met_samples(config, dual_log) if config["MERGE_MET"] else None
+
             total_files = 0
             for day_idx, (day, recs) in enumerate(days, start=1):
                 progress(day_idx + 1, total_steps, f"Processing day {day_idx} of {len(days)}")
 
                 hour_bundles = parse_daily_file_to_hours(config["SITE_ID"], recs)
-                hour_bundles = merge_met_for_day(hour_bundles, config, dual_log)
+                hour_bundles = merge_met_for_day(hour_bundles, config, dual_log, met_samples=met_samples)
 
                 for b in hour_bundles:
                     write_hour_file(config["OUTPUT_DIR"], config["SITE_ID"], b["start"], b["rows"])

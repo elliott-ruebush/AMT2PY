@@ -201,6 +201,12 @@ def export_data(df: pd.DataFrame, output_dir: str, serial: str, logger: logging.
     output_path = os.path.join(output_dir, filename)
     df.to_csv(output_path, index=False)
     logger.info(f"All columns written to output: {list(df.columns)}")
+    if "Date-Time (LOC)" in df.columns:
+        loc_i = list(df.columns).index("Date-Time (LOC)")
+        logger.info(
+            f"NVSPL merge hint: use MET timestamp column {loc_i} (Date-Time (LOC)); "
+            "wind speed often column 3 (Gust/Avg) — auto-filled when browsing this file in ld821_to_nvspl.py"
+        )
     logger.info(f"Output written: {output_path}")
     logger.info("----- FeatherMC wind clean prep run completed -----")
     return output_path
