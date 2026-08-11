@@ -96,7 +96,7 @@ python ld821_combine.py
 2. Enter site name and deploy date.  
 3. Run.
 
-**Output:** `{site}_Time History.csv` and `combine_slm_*.log` in the folder you browsed to (not inside a subfolder). If files are found in multiple subfolders, you'll get a warning before combining.
+**Output:** `{site}_Time History.csv` and `combine_slm_*.log` in the folder you browsed to (not inside a subfolder). If files are found in multiple subfolders, you'll be asked to confirm before combining.
 
 ## Step 3 — Convert to NVSPL
 

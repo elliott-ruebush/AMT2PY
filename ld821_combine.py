@@ -3,6 +3,7 @@ import os
 import re
 import csv
 import logging
+import threading
 from logging import Formatter, StreamHandler, FileHandler
 from datetime import datetime
 
@@ -100,14 +101,24 @@ def find_time_column(df: pd.DataFrame) -> str:
         return df.columns[1]
     return df.columns[0]
 
-def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: logging.Logger, output_dir: str):
-    logger.info(f"Files matched Time History pattern: {len(selected_files)}")
+def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: logging.Logger, output_dir: str, progress_callback=None):
+    n = len(selected_files)
+    total = n + 2
+
+    def report(step, msg):
+        if progress_callback:
+            progress_callback(step, total, msg)
+
+    logger.info(f"Files matched Time History pattern: {n}")
     for f in selected_files:
         logger.info(f"  ✔ {f}")
 
+    report(0, "Starting…")
+
     # Read CSVs
     dfs = []
-    for f in selected_files:
+    for i, f in enumerate(selected_files):
+        report(i + 1, f"Reading file {i + 1} of {n}…")
         try:
             df = pd.read_csv(f)
             dfs.append(df)
@@ -115,6 +126,8 @@ def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: 
         except Exception as e:
             logger.error(f"Failed to read {f}: {e}")
             raise
+
+    report(n + 1, "Combining and sorting…")
 
     # Combine into a single DataFrame
     data = pd.concat(dfs, ignore_index=True)
@@ -141,6 +154,8 @@ def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: 
     output_fname = f"{sitename}_{standardized_fname}"
     output_path = os.path.join(output_dir, output_fname)
 
+    report(n + 2, "Writing output…")
+
     # Write CSV
     data.to_csv(output_path, index=False, quoting=csv.QUOTE_NONE, escapechar='\\')
     logger.info(f"Output written: {output_path}")
@@ -159,15 +174,37 @@ class LD821CombineApp(tk.Tk):
 
         self.selected_folder = ""
         self.matched_files = []
+        self._worker_running = False
         self._build_gui()
+
+    def _on_ui(self, func, *args, **kwargs):
+        self.after(0, lambda: func(*args, **kwargs))
+
+    def _update_progress(self, step, total, message):
+        self.progress.config(maximum=total, value=step)
+        self.lbl_progress.config(text=message)
+
+    def _reset_progress(self):
+        self.progress.config(value=0)
+        self.lbl_progress.config(text="")
+
+    def _result_text_key(self, event):
+        mod = event.state & 0x4 or event.state & 0x8  # Ctrl (Win/Linux) or Command (macOS)
+        if mod and event.keysym.lower() in ("c", "a"):
+            return
+        return "break"
 
     def _set_result(self, text, ok=None):
         if ok is True:
-            self.lbl_result.config(text=text, foreground="#1a7f37")
+            color = "#1a7f37"
         elif ok is False:
-            self.lbl_result.config(text=text, foreground="#b42318")
+            color = "#b42318"
         else:
-            self.lbl_result.config(text=text, foreground="#666666")
+            color = "#666666"
+        self.txt_result.config(fg=color)
+        self.txt_result.delete("1.0", tk.END)
+        if text:
+            self.txt_result.insert("1.0", text)
 
     def _build_gui(self):
         main_frame = ttk.Frame(self, padding="12")
@@ -223,11 +260,24 @@ class LD821CombineApp(tk.Tk):
         self.btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
         self.btn_run.pack(fill=tk.X, pady=(12, 4))
 
+        self.lbl_progress = ttk.Label(main_frame, text="", font=("Segoe UI", 9))
+        self.lbl_progress.pack(fill=tk.X, pady=(0, 2))
+
+        self.progress = ttk.Progressbar(main_frame, mode="determinate", maximum=100)
+        self.progress.pack(fill=tk.X, pady=(0, 6))
+
         self.lbl_result = tk.Label(
-            main_frame, text="", justify=tk.LEFT, wraplength=520,
-            font=("Segoe UI", 9), foreground="#666666"
+            main_frame, text="Result (select text to copy):", anchor="w",
+            font=("Segoe UI", 9), foreground="#444444"
         )
-        self.lbl_result.pack(fill=tk.X, pady=(0, 4))
+        self.lbl_result.pack(fill=tk.X, pady=(0, 2))
+
+        self.txt_result = tk.Text(
+            main_frame, height=4, wrap=tk.WORD, font=("Segoe UI", 9),
+            relief=tk.GROOVE, borderwidth=1, padx=4, pady=4, foreground="#666666"
+        )
+        self.txt_result.pack(fill=tk.X, pady=(0, 4))
+        self.txt_result.bind("<Key>", self._result_text_key)
 
     def browse_folder(self):
         folder = filedialog.askdirectory(title="Select High-Level Directory (RAW)")
@@ -261,6 +311,8 @@ class LD821CombineApp(tk.Tk):
             )
 
     def run_process(self):
+        if self._worker_running:
+            return
         if not self.matched_files:
             messagebox.showwarning("Missing Input", "Please select a directory containing 'Time History' CSV files first.")
             return
@@ -273,40 +325,73 @@ class LD821CombineApp(tk.Tk):
             proceed = messagebox.askyesno(
                 "Multiple source folders",
                 f"Time History files were found in {len(source_dirs)} different subfolders.\n\n"
-                "Combining files from different exports is usually a mistake.\n\n"
-                "Continue anyway?"
+                "Please confirm these are the files you want to combine.\n\n"
+                "Continue?"
             )
             if not proceed:
                 return
 
         output_dir = self.selected_folder
+
+        self._worker_running = True
+        self.btn_run.config(state=tk.DISABLED, text="Processing…")
+        self._set_result("")
+        self._update_progress(0, 1, "Starting…")
+
+        threading.Thread(
+            target=self._run_worker,
+            args=(output_dir, sitename, deploy),
+            daemon=True,
+        ).start()
+
+    def _run_worker(self, output_dir, sitename, deploy):
         logger = None
 
-        self.btn_run.config(state=tk.DISABLED, text="Processing…")
-        self._set_result("Working…")
-        self.update_idletasks()
+        def progress(step, total, message):
+            self._on_ui(self._update_progress, step, total, message)
 
         try:
             logger, log_path = setup_logger(output_dir, sitename, deploy)
-            output_path = process_slm_files(self.matched_files, sitename, deploy, logger, output_dir)
-
-            self._set_result(
-                f"Done — combined {len(self.matched_files)} file(s)\n"
-                f"Output: {output_path}\n"
-                f"Log: {log_path}",
-                ok=True,
+            output_path = process_slm_files(
+                self.matched_files, sitename, deploy, logger, output_dir,
+                progress_callback=progress,
             )
-            messagebox.showinfo(
-                "Processing Complete",
-                f"Successfully combined {len(self.matched_files)} file(s).\n\nOutput saved to:\n{output_path}"
-            )
+            self._on_ui(self._on_success, output_path, log_path)
         except Exception as e:
-            self._set_result(f"Failed — {e}", ok=False)
-            messagebox.showerror("Execution Error", f"An error occurred while combining files:\n{e}")
+            self._on_ui(self._on_failure, str(e))
         finally:
             if logger:
                 close_logger(logger)
-            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+            self._worker_running = False
+            self._on_ui(self._on_worker_done)
+
+    def _on_success(self, output_path, log_path):
+        total = int(float(self.progress.cget("maximum")))
+        self._update_progress(total, total, "Done")
+        self._set_result(
+            f"LD821 combine done — {len(self.matched_files)} file(s)\n"
+            f"Output: {output_path}\n"
+            f"Log: {log_path}",
+            ok=True,
+        )
+        messagebox.showinfo(
+            "LD821 Combine — Complete",
+            f"LD821 Time History Combiner finished successfully.\n\n"
+            f"Combined {len(self.matched_files)} file(s).\n\nOutput saved to:\n{output_path}"
+        )
+
+    def _on_failure(self, error):
+        self._reset_progress()
+        self._set_result(f"Failed — {error}", ok=False)
+        messagebox.showerror(
+            "LD821 Combine — Error",
+            f"LD821 Time History Combiner failed:\n{error}"
+        )
+
+    def _on_worker_done(self):
+        self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+        if float(self.progress.cget("value")) < float(self.progress.cget("maximum")):
+            self._reset_progress()
 
 # ------------------------------------------------------------------------------
 # Entry Point

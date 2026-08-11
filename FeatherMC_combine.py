@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import logging
+import threading
 from logging import Formatter, StreamHandler, FileHandler
 from datetime import datetime
 
@@ -84,16 +85,24 @@ def close_logger(logger: logging.Logger):
         handler.close()
         logger.removeHandler(handler)
 
-def read_and_combine_files(file_paths, logger: logging.Logger) -> pd.DataFrame:
+def read_and_combine_files(file_paths, logger: logging.Logger, progress_callback=None) -> pd.DataFrame:
     if not file_paths:
         raise ValueError("No files were selected.")
 
-    logger.info(f"Total files selected: {len(file_paths)}")
+    n = len(file_paths)
+    total = n + 2
+
+    def report(step, msg):
+        if progress_callback:
+            progress_callback(step, total, msg)
+
+    logger.info(f"Total files selected: {n}")
     for f in file_paths:
         logger.info(f"  - {f}")
 
     dfs = []
-    for f in file_paths:
+    for i, f in enumerate(file_paths):
+        report(i + 1, f"Reading file {i + 1} of {n}…")
         try:
             df = pd.read_csv(f)
             dfs.append(df)
@@ -193,15 +202,37 @@ class FeatherMCApp(tk.Tk):
         self.resizable(True, True)
 
         self.selected_files = []
+        self._worker_running = False
         self._build_gui()
+
+    def _on_ui(self, func, *args, **kwargs):
+        self.after(0, lambda: func(*args, **kwargs))
+
+    def _update_progress(self, step, total, message):
+        self.progress.config(maximum=total, value=step)
+        self.lbl_progress.config(text=message)
+
+    def _reset_progress(self):
+        self.progress.config(value=0)
+        self.lbl_progress.config(text="")
+
+    def _result_text_key(self, event):
+        mod = event.state & 0x4 or event.state & 0x8  # Ctrl (Win/Linux) or Command (macOS)
+        if mod and event.keysym.lower() in ("c", "a"):
+            return
+        return "break"
 
     def _set_result(self, text, ok=None):
         if ok is True:
-            self.lbl_result.config(text=text, foreground="#1a7f37")
+            color = "#1a7f37"
         elif ok is False:
-            self.lbl_result.config(text=text, foreground="#b42318")
+            color = "#b42318"
         else:
-            self.lbl_result.config(text=text, foreground="#666666")
+            color = "#666666"
+        self.txt_result.config(fg=color)
+        self.txt_result.delete("1.0", tk.END)
+        if text:
+            self.txt_result.insert("1.0", text)
 
     def _build_gui(self):
         main_frame = ttk.Frame(self, padding="12")
@@ -286,11 +317,24 @@ class FeatherMCApp(tk.Tk):
         self.btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
         self.btn_run.pack(fill=tk.X, pady=(12, 4))
 
+        self.lbl_progress = ttk.Label(main_frame, text="", font=("Segoe UI", 9))
+        self.lbl_progress.pack(fill=tk.X, pady=(0, 2))
+
+        self.progress = ttk.Progressbar(main_frame, mode="determinate", maximum=100)
+        self.progress.pack(fill=tk.X, pady=(0, 6))
+
         self.lbl_result = tk.Label(
-            main_frame, text="", justify=tk.LEFT, wraplength=520,
-            font=("Segoe UI", 9), foreground="#666666"
+            main_frame, text="Result (select text to copy):", anchor="w",
+            font=("Segoe UI", 9), foreground="#444444"
         )
-        self.lbl_result.pack(fill=tk.X, pady=(0, 4))
+        self.lbl_result.pack(fill=tk.X, pady=(0, 2))
+
+        self.txt_result = tk.Text(
+            main_frame, height=4, wrap=tk.WORD, font=("Segoe UI", 9),
+            relief=tk.GROOVE, borderwidth=1, padx=4, pady=4, foreground="#666666"
+        )
+        self.txt_result.pack(fill=tk.X, pady=(0, 4))
+        self.txt_result.bind("<Key>", self._result_text_key)
 
     def browse_files(self):
         file_paths = filedialog.askopenfilenames(
@@ -306,6 +350,8 @@ class FeatherMCApp(tk.Tk):
             self._set_result("")
 
     def run_process(self):
+        if self._worker_running:
+            return
         if not self.selected_files:
             messagebox.showwarning("Selection Missing", "Please select met data CSV files first.")
             return
@@ -317,37 +363,72 @@ class FeatherMCApp(tk.Tk):
         adjust_for_dst = self.var_dst.get()
 
         output_dir_for_logs = os.path.dirname(self.selected_files[0])
-        logger = None
 
+        self._worker_running = True
         self.btn_run.config(state=tk.DISABLED, text="Processing…")
-        self._set_result("Working…")
-        self.update_idletasks()
+        self._set_result("")
+        self._update_progress(0, 1, "Starting…")
+
+        threading.Thread(
+            target=self._run_worker,
+            args=(output_dir_for_logs, site_name, deploy, serial, deploy_tzone, adjust_for_dst),
+            daemon=True,
+        ).start()
+
+    def _run_worker(self, output_dir, site_name, deploy, serial, deploy_tzone, adjust_for_dst):
+        logger = None
+        n = len(self.selected_files)
+        total = n + 2
+
+        def progress(step, msg):
+            self._on_ui(self._update_progress, step, total, msg)
 
         try:
-            logger, log_path = setup_logger(output_dir_for_logs, site_name, deploy, serial)
+            logger, log_path = setup_logger(output_dir, site_name, deploy, serial)
             logger.info(f"Time zone selected: {deploy_tzone} | adjust_for_dst={adjust_for_dst}")
 
-            raw_data = read_and_combine_files(self.selected_files, logger)
+            raw_data = read_and_combine_files(self.selected_files, logger, progress_callback=progress)
+            progress(n + 1, "Cleaning and converting timestamps…")
             clean_data = clean_and_format_data(raw_data, deploy_tzone, adjust_for_dst, logger)
+            progress(n + 2, "Writing output…")
             output_path = export_data(clean_data, self.selected_files, serial, logger)
 
-            self._set_result(
-                f"Done — combined {len(self.selected_files)} file(s)\n"
-                f"Output: {output_path}\n"
-                f"Log: {log_path}",
-                ok=True,
-            )
-            messagebox.showinfo(
-                "Processing Complete",
-                f"Successfully combined {len(self.selected_files)} file(s).\n\nOutput saved to:\n{output_path}"
-            )
+            self._on_ui(self._on_success, output_path, log_path)
         except Exception as e:
-            self._set_result(f"Failed — {e}", ok=False)
-            messagebox.showerror("Execution Error", f"An error occurred while processing files:\n{e}")
+            self._on_ui(self._on_failure, str(e))
         finally:
             if logger:
                 close_logger(logger)
-            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+            self._worker_running = False
+            self._on_ui(self._on_worker_done)
+
+    def _on_success(self, output_path, log_path):
+        total = int(float(self.progress.cget("maximum")))
+        self._update_progress(total, total, "Done")
+        self._set_result(
+            f"FeatherMC combine done — {len(self.selected_files)} file(s)\n"
+            f"Output: {output_path}\n"
+            f"Log: {log_path}",
+            ok=True,
+        )
+        messagebox.showinfo(
+            "FeatherMC Combine — Complete",
+            f"FeatherMC Wind Combiner finished successfully.\n\n"
+            f"Combined {len(self.selected_files)} file(s).\n\nOutput saved to:\n{output_path}"
+        )
+
+    def _on_failure(self, error):
+        self._reset_progress()
+        self._set_result(f"Failed — {error}", ok=False)
+        messagebox.showerror(
+            "FeatherMC Combine — Error",
+            f"FeatherMC Wind Combiner failed:\n{error}"
+        )
+
+    def _on_worker_done(self):
+        self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
+        if float(self.progress.cget("value")) < float(self.progress.cget("maximum")):
+            self._reset_progress()
 
 # ------------------------------------------------------------------------------
 # Entry Point
