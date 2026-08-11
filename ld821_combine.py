@@ -4,79 +4,37 @@ import re
 import csv
 import logging
 import threading
-from logging import Formatter, StreamHandler, FileHandler
 from datetime import datetime
 
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+from shared_gui_components import (
+    ToolTip,
+    WorkerGuiMixin,
+    add_run_status_panel,
+    close_logger,
+    create_file_logger,
+)
+
 # Compile regex pattern to match: ...Time History[ optional number ].csv
 TIME_HISTORY_PATTERN = re.compile(r'Time History(?:\s*\d+)?\.csv$', re.IGNORECASE)
 
 # ------------------------------------------------------------------------------
-# ToolTip Helper
-# ------------------------------------------------------------------------------
-class ToolTip:
-    """Helper to display hover tooltips for UI widgets."""
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tip_window = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
-
-    def show_tip(self, event=None):
-        if self.tip_window or not self.text:
-            return
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 25
-        self.tip_window = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#ffffe0",
-                         relief=tk.SOLID, borderwidth=1, font=("tahoma", "8", "normal"))
-        label.pack(ipadx=1)
-
-    def hide_tip(self, event=None):
-        if self.tip_window:
-            self.tip_window.destroy()
-            self.tip_window = None
-
-# ------------------------------------------------------------------------------
 # Core Processing Functions
 # ------------------------------------------------------------------------------
-def setup_logger(output_dir: str, sitename: str, deploy: str):
+def setup_logger(output_dir: str, sitename: str, selected_folder: str):
     log_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = os.path.join(output_dir, f"combine_slm_{log_ts}.log")
-
-    logger = logging.getLogger("combine_slm")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
-
-    console_handler = StreamHandler()
-    file_handler = FileHandler(log_path, encoding="utf-8")
-
-    fmt = Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+    return create_file_logger(
+        "combine_slm",
+        log_path,
+        [
+            "----- Combine SLM Time History run started -----",
+            f"Sitename: {sitename} | Selected folder: {selected_folder}",
+        ],
     )
-    console_handler.setFormatter(fmt)
-    file_handler.setFormatter(fmt)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    logger.info("----- Combine SLM Time History run started -----")
-    logger.info(f"Sitename: {sitename} | Deploy: {deploy}")
-    logger.info(f"Log file: {log_path}")
-    return logger, log_path
-
-def close_logger(logger: logging.Logger):
-    for handler in logger.handlers[:]:
-        handler.close()
-        logger.removeHandler(handler)
 
 def find_time_column(df: pd.DataFrame) -> str:
     # First pass: columns that look like time/date/timestamp
@@ -101,7 +59,7 @@ def find_time_column(df: pd.DataFrame) -> str:
         return df.columns[1]
     return df.columns[0]
 
-def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: logging.Logger, output_dir: str, progress_callback=None):
+def process_slm_files(selected_files: list, sitename: str, logger: logging.Logger, output_dir: str, progress_callback=None):
     n = len(selected_files)
     total = n + 2
 
@@ -165,7 +123,7 @@ def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: 
 # ------------------------------------------------------------------------------
 # Main Application GUI
 # ------------------------------------------------------------------------------
-class LD821CombineApp(tk.Tk):
+class LD821CombineApp(WorkerGuiMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("LD821 Time History Combiner")
@@ -174,37 +132,8 @@ class LD821CombineApp(tk.Tk):
 
         self.selected_folder = ""
         self.matched_files = []
-        self._worker_running = False
+        self.init_worker_state()
         self._build_gui()
-
-    def _on_ui(self, func, *args, **kwargs):
-        self.after(0, lambda: func(*args, **kwargs))
-
-    def _update_progress(self, step, total, message):
-        self.progress.config(maximum=total, value=step)
-        self.lbl_progress.config(text=message)
-
-    def _reset_progress(self):
-        self.progress.config(value=0)
-        self.lbl_progress.config(text="")
-
-    def _result_text_key(self, event):
-        mod = event.state & 0x4 or event.state & 0x8  # Ctrl (Win/Linux) or Command (macOS)
-        if mod and event.keysym.lower() in ("c", "a"):
-            return
-        return "break"
-
-    def _set_result(self, text, ok=None):
-        if ok is True:
-            color = "#1a7f37"
-        elif ok is False:
-            color = "#b42318"
-        else:
-            color = "#666666"
-        self.txt_result.config(fg=color)
-        self.txt_result.delete("1.0", tk.END)
-        if text:
-            self.txt_result.insert("1.0", text)
 
     def _build_gui(self):
         main_frame = ttk.Frame(self, padding="12")
@@ -233,7 +162,7 @@ class LD821CombineApp(tk.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # --- Metadata Inputs Group ---
-        grp_meta = ttk.LabelFrame(main_frame, text=" Site & Deployment Settings ", padding="10")
+        grp_meta = ttk.LabelFrame(main_frame, text=" Site Settings ", padding="10")
         grp_meta.pack(fill=tk.X, pady=5)
 
         # sitename
@@ -243,50 +172,11 @@ class LD821CombineApp(tk.Tk):
         ent_site = ttk.Entry(grp_meta, textvariable=self.var_sitename)
         ent_site.grid(row=0, column=1, sticky="ew", padx=5, pady=4)
         grp_meta.columnconfigure(1, weight=1)
-        hint_site = "Alpha numeric park code and site number"
+        hint_site = "Used in output filename (e.g. DENATRLA)"
         ToolTip(ent_site, hint_site)
         ToolTip(lbl_site, hint_site)
 
-        # deploy
-        lbl_deploy = ttk.Label(grp_meta, text="Deploy Date:", width=18, anchor="w")
-        lbl_deploy.grid(row=1, column=0, sticky="w", pady=4)
-        self.var_deploy = tk.StringVar(value="20260101")
-        ent_deploy = ttk.Entry(grp_meta, textvariable=self.var_deploy)
-        ent_deploy.grid(row=1, column=1, sticky="ew", padx=5, pady=4)
-        hint_deploy = "YYYYMMDD"
-        ToolTip(ent_deploy, hint_deploy)
-        ToolTip(lbl_deploy, hint_deploy)
-
-        # --- Run Button ---
-        self.btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
-        self.btn_run.pack(fill=tk.X, pady=(12, 4))
-
-        self.lbl_progress = ttk.Label(main_frame, text="", font=("Segoe UI", 9))
-        self.lbl_progress.pack(fill=tk.X, pady=(0, 2))
-
-        self.progress = ttk.Progressbar(main_frame, mode="determinate", maximum=100)
-        self.progress.pack(fill=tk.X, pady=(0, 6))
-
-        self.lbl_result = tk.Label(
-            main_frame, text="Result (select text to copy):", anchor="w",
-            font=("Segoe UI", 9), foreground="#444444"
-        )
-        self.lbl_result.pack(fill=tk.X, pady=(0, 2))
-
-        self.txt_result = tk.Text(
-            main_frame, height=4, wrap=tk.WORD, font=("Segoe UI", 9),
-            relief=tk.GROOVE, borderwidth=1, padx=4, pady=4, foreground="#666666"
-        )
-        self.txt_result.pack(fill=tk.X, pady=(0, 4))
-        self.txt_result.bind("<Key>", self._result_text_key)
-
-    def _set_busy(self, busy):
-        if busy:
-            self.btn_run.config(state=tk.DISABLED, text="Processing…")
-            self.btn_browse.config(state=tk.DISABLED)
-        else:
-            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
-            self.btn_browse.config(state=tk.NORMAL)
+        add_run_status_panel(self, main_frame)
 
     def browse_folder(self):
         if self._worker_running:
@@ -329,7 +219,6 @@ class LD821CombineApp(tk.Tk):
             return
 
         sitename = self.var_sitename.get().strip()
-        deploy = self.var_deploy.get().strip()
 
         source_dirs = {os.path.dirname(f) for f in self.matched_files}
         if len(source_dirs) > 1:
@@ -352,20 +241,18 @@ class LD821CombineApp(tk.Tk):
 
         threading.Thread(
             target=self._run_worker,
-            args=(output_dir, sitename, deploy, files),
+            args=(output_dir, sitename, files),
             daemon=True,
         ).start()
 
-    def _run_worker(self, output_dir, sitename, deploy, files):
+    def _run_worker(self, output_dir, sitename, files):
         logger = None
-
-        def progress(step, total, message):
-            self._on_ui(self._update_progress, step, total, message)
+        progress = self._make_progress_callback()
 
         try:
-            logger, log_path = setup_logger(output_dir, sitename, deploy)
+            logger, log_path = setup_logger(output_dir, sitename, self.selected_folder)
             output_path = process_slm_files(
-                files, sitename, deploy, logger, output_dir,
+                files, sitename, logger, output_dir,
                 progress_callback=progress,
             )
             self._on_ui(self._on_success, output_path, log_path, len(files))
@@ -398,12 +285,6 @@ class LD821CombineApp(tk.Tk):
             "LD821 Combine — Error",
             f"LD821 Time History Combiner failed:\n{error}"
         )
-
-    def _on_worker_done(self):
-        self._worker_running = False
-        self._set_busy(False)
-        if float(self.progress.cget("value")) < float(self.progress.cget("maximum")):
-            self._reset_progress()
 
 # ------------------------------------------------------------------------------
 # Entry Point

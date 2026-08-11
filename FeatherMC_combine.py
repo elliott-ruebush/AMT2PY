@@ -1,14 +1,23 @@
 # -*- coding: utf-8 -*-
 import os
+import re
+import csv
 import logging
 import threading
-from logging import Formatter, StreamHandler, FileHandler
 from datetime import datetime
 
 import pandas as pd
 import pytz
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+
+from shared_gui_components import (
+    ToolTip,
+    WorkerGuiMixin,
+    add_run_status_panel,
+    close_logger,
+    create_file_logger,
+)
 
 # Timezone definitions
 COMMON_TZS = [
@@ -24,66 +33,64 @@ try:
 except Exception:
     TIMEZONE_LIST = COMMON_TZS
 
-# ------------------------------------------------------------------------------
-# ToolTip Helper
-# ------------------------------------------------------------------------------
-class ToolTip:
-    """Helper to display hover tooltips for UI widgets."""
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tip_window = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
+# Combined output from this script: "{serial} {YYYY-MM-DD HHMMSS}.csv"
+COMBINED_OUTPUT_PATTERN = re.compile(
+    r'^\d+\s+\d{4}-\d{2}-\d{2}\s+\d{6}\.csv$', re.IGNORECASE
+)
 
-    def show_tip(self, event=None):
-        if self.tip_window or not self.text:
-            return
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 25
-        self.tip_window = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(tw, text=self.text, justify=tk.LEFT, background="#ffffe0",
-                         relief=tk.SOLID, borderwidth=1, font=("tahoma", "8", "normal"))
-        label.pack(ipadx=1)
+def _read_csv_header(path: str) -> list:
+    with open(path, 'r', encoding='utf-8', errors='replace', newline='') as f:
+        return next(csv.reader(f), [])
 
-    def hide_tip(self, event=None):
-        if self.tip_window:
-            self.tip_window.destroy()
-            self.tip_window = None
+def is_raw_logger_csv(path: str) -> bool:
+    """MicroSD logger export — not a prior combined output from this tool."""
+    name = os.path.basename(path)
+    if COMBINED_OUTPUT_PATTERN.match(name):
+        return False
+    try:
+        cols = {c.strip() for c in _read_csv_header(path)}
+    except OSError:
+        return False
+    if 'Date-Time (UTC)' not in cols:
+        return False
+    if 'Date-Time (LOC)' in cols:
+        return False
+    return True
+
+def find_raw_logger_csvs(folder: str):
+    """Return (matched paths, skipped combined names, skipped other names)."""
+    matched = []
+    skipped_combined = []
+    skipped_other = []
+    for name in sorted(os.listdir(folder)):
+        if not name.lower().endswith('.csv'):
+            continue
+        full = os.path.join(folder, name)
+        if not os.path.isfile(full):
+            continue
+        if COMBINED_OUTPUT_PATTERN.match(name):
+            skipped_combined.append(name)
+            continue
+        if is_raw_logger_csv(full):
+            matched.append(full)
+        else:
+            skipped_other.append(name)
+    return matched, skipped_combined, skipped_other
 
 # ------------------------------------------------------------------------------
 # Core Processing Functions
 # ------------------------------------------------------------------------------
-def setup_logger(output_dir: str, site_name: str, deploy: str, serial: str):
+def setup_logger(output_dir: str, site_name: str, serial: str, selected_folder: str):
     log_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = os.path.join(output_dir, f"feathermc_clean_{log_ts}.log")
-
-    logger = logging.getLogger("feathermc_clean")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
-
-    console_handler = StreamHandler()
-    file_handler = FileHandler(log_path, encoding="utf-8")
-
-    fmt = Formatter("%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    console_handler.setFormatter(fmt)
-    file_handler.setFormatter(fmt)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    logger.info("----- FeatherMC wind clean prep run started -----")
-    logger.info(f"Site: {site_name} | Deploy: {deploy} | Serial: {serial}")
-    logger.info(f"Log file: {log_path}")
-    return logger, log_path
-
-def close_logger(logger: logging.Logger):
-    for handler in logger.handlers[:]:
-        handler.close()
-        logger.removeHandler(handler)
+    return create_file_logger(
+        "feathermc_clean",
+        log_path,
+        [
+            "----- FeatherMC wind clean prep run started -----",
+            f"Site: {site_name} | Serial: {serial} | Selected folder: {selected_folder}",
+        ],
+    )
 
 def read_and_combine_files(file_paths, logger: logging.Logger, progress_callback=None) -> pd.DataFrame:
     if not file_paths:
@@ -182,12 +189,11 @@ def clean_and_format_data(df: pd.DataFrame, tz: str, adjust_dst: bool, logger: l
 
     return df
 
-def export_data(df: pd.DataFrame, file_paths, serial: str, logger: logging.Logger):
+def export_data(df: pd.DataFrame, output_dir: str, serial: str, logger: logging.Logger):
     if df.empty:
         msg = "No valid data rows remain after cleaning and UTC conversion."
         logger.error(msg)
         raise ValueError(msg)
-    output_dir = os.path.dirname(file_paths[0])
     last_date_str = df['Date-Time (LOC)'].iloc[-1]
     last_dt = datetime.strptime(last_date_str, "%m/%d/%Y %H:%M:%S")
     formatted_date = last_dt.strftime("%Y-%m-%d %H%M%S")
@@ -202,59 +208,35 @@ def export_data(df: pd.DataFrame, file_paths, serial: str, logger: logging.Logge
 # ------------------------------------------------------------------------------
 # Main Application GUI
 # ------------------------------------------------------------------------------
-class FeatherMCApp(tk.Tk):
+class FeatherMCApp(WorkerGuiMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("FeatherMC Wind Data Combination Tool")
         self.geometry("560x600")
         self.resizable(True, True)
 
-        self.selected_files = []
-        self._worker_running = False
+        self.selected_folder = ""
+        self.matched_files = []
+        self.init_worker_state()
         self._build_gui()
-
-    def _on_ui(self, func, *args, **kwargs):
-        self.after(0, lambda: func(*args, **kwargs))
-
-    def _update_progress(self, step, total, message):
-        self.progress.config(maximum=total, value=step)
-        self.lbl_progress.config(text=message)
-
-    def _reset_progress(self):
-        self.progress.config(value=0)
-        self.lbl_progress.config(text="")
-
-    def _result_text_key(self, event):
-        mod = event.state & 0x4 or event.state & 0x8  # Ctrl (Win/Linux) or Command (macOS)
-        if mod and event.keysym.lower() in ("c", "a"):
-            return
-        return "break"
-
-    def _set_result(self, text, ok=None):
-        if ok is True:
-            color = "#1a7f37"
-        elif ok is False:
-            color = "#b42318"
-        else:
-            color = "#666666"
-        self.txt_result.config(fg=color)
-        self.txt_result.delete("1.0", tk.END)
-        if text:
-            self.txt_result.insert("1.0", text)
 
     def _build_gui(self):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # --- File Selector Group ---
-        grp_files = ttk.LabelFrame(main_frame, text=" Met File Selector ", padding="10")
+        grp_files = ttk.LabelFrame(main_frame, text=" MET Folder Selector ", padding="10")
         grp_files.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        btn_browse = ttk.Button(grp_files, text="Select Wind CSV Files...", command=self.browse_files)
+        btn_browse = ttk.Button(
+            grp_files,
+            text="Select MET Folder (logger CSVs; combined outputs skipped automatically)...",
+            command=self.browse_folder,
+        )
         btn_browse.pack(anchor="w", pady=(0, 5))
         self.btn_browse = btn_browse
 
-        self.lbl_file_count = ttk.Label(grp_files, text="No files selected", font=("Segoe UI", 9, "italic"))
+        self.lbl_file_count = ttk.Label(grp_files, text="No folder selected", font=("Segoe UI", 9, "italic"))
         self.lbl_file_count.pack(anchor="w", pady=(0, 2))
 
         # Listbox to display selected file paths
@@ -269,7 +251,7 @@ class FeatherMCApp(tk.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # --- User Input & Metadata Group ---
-        grp_meta = ttk.LabelFrame(main_frame, text=" Site & Deployment Settings ", padding="10")
+        grp_meta = ttk.LabelFrame(main_frame, text=" Site Settings ", padding="10")
         grp_meta.pack(fill=tk.X, pady=5)
 
         # site_name
@@ -279,26 +261,16 @@ class FeatherMCApp(tk.Tk):
         ent_site = ttk.Entry(grp_meta, textvariable=self.var_site_name)
         ent_site.grid(row=0, column=1, sticky="ew", padx=5, pady=4)
         grp_meta.columnconfigure(1, weight=1)
-        hint_site = "Alpha numeric park code and site number"
+        hint_site = "Optional log metadata (e.g. DENATRLA)"
         ToolTip(ent_site, hint_site)
         ToolTip(lbl_site, hint_site)
 
-        # deploy
-        lbl_deploy = ttk.Label(grp_meta, text="Deploy Date:", width=18, anchor="w")
-        lbl_deploy.grid(row=1, column=0, sticky="w", pady=4)
-        self.var_deploy = tk.StringVar(value="20260101")
-        ent_deploy = ttk.Entry(grp_meta, textvariable=self.var_deploy)
-        ent_deploy.grid(row=1, column=1, sticky="ew", padx=5, pady=4)
-        hint_deploy = "YYYYMMDD"
-        ToolTip(ent_deploy, hint_deploy)
-        ToolTip(lbl_deploy, hint_deploy)
-
         # serial
         lbl_serial = ttk.Label(grp_meta, text="Serial Number:", width=18, anchor="w")
-        lbl_serial.grid(row=2, column=0, sticky="w", pady=4)
+        lbl_serial.grid(row=1, column=0, sticky="w", pady=4)
         self.var_serial = tk.StringVar(value="00000018")
         ent_serial = ttk.Entry(grp_meta, textvariable=self.var_serial)
-        ent_serial.grid(row=2, column=1, sticky="ew", padx=5, pady=4)
+        ent_serial.grid(row=1, column=1, sticky="ew", padx=5, pady=4)
         hint_serial = "Located in metadata files"
         ToolTip(ent_serial, hint_serial)
         ToolTip(lbl_serial, hint_serial)
@@ -322,67 +294,61 @@ class FeatherMCApp(tk.Tk):
         )
         chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
-        # --- Action Button ---
-        self.btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
-        self.btn_run.pack(fill=tk.X, pady=(12, 4))
+        add_run_status_panel(self, main_frame)
 
-        self.lbl_progress = ttk.Label(main_frame, text="", font=("Segoe UI", 9))
-        self.lbl_progress.pack(fill=tk.X, pady=(0, 2))
-
-        self.progress = ttk.Progressbar(main_frame, mode="determinate", maximum=100)
-        self.progress.pack(fill=tk.X, pady=(0, 6))
-
-        self.lbl_result = tk.Label(
-            main_frame, text="Result (select text to copy):", anchor="w",
-            font=("Segoe UI", 9), foreground="#444444"
-        )
-        self.lbl_result.pack(fill=tk.X, pady=(0, 2))
-
-        self.txt_result = tk.Text(
-            main_frame, height=4, wrap=tk.WORD, font=("Segoe UI", 9),
-            relief=tk.GROOVE, borderwidth=1, padx=4, pady=4, foreground="#666666"
-        )
-        self.txt_result.pack(fill=tk.X, pady=(0, 4))
-        self.txt_result.bind("<Key>", self._result_text_key)
-
-    def _set_busy(self, busy):
-        if busy:
-            self.btn_run.config(state=tk.DISABLED, text="Processing…")
-            self.btn_browse.config(state=tk.DISABLED)
-        else:
-            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
-            self.btn_browse.config(state=tk.NORMAL)
-
-    def browse_files(self):
+    def browse_folder(self):
         if self._worker_running:
             return
-        file_paths = filedialog.askopenfilenames(
-            title="Select wind CSV files (exclude MD files)",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        if file_paths:
-            self.selected_files = list(file_paths)
-            self.lst_files.delete(0, tk.END)
-            for f in self.selected_files:
+        folder = filedialog.askdirectory(title="Select MET Folder")
+        if not folder:
+            return
+
+        self.selected_folder = folder
+        self.matched_files = []
+        self.lst_files.delete(0, tk.END)
+        self._set_result("")
+
+        matched, skipped_combined, skipped_other = find_raw_logger_csvs(folder)
+
+        if matched:
+            self.matched_files = matched
+            parts = [f"Found {len(matched)} logger CSV(s) in {os.path.basename(folder)}"]
+            if skipped_combined:
+                parts.append(f"skipped {len(skipped_combined)} combined output(s)")
+            if skipped_other:
+                parts.append(f"skipped {len(skipped_other)} other CSV(s)")
+            self.lbl_file_count.config(text=" — ".join(parts))
+            for f in matched:
                 self.lst_files.insert(tk.END, os.path.basename(f))
-            self.lbl_file_count.config(text=f"{len(self.selected_files)} file(s) selected")
-            self._set_result("")
+        else:
+            self.lbl_file_count.config(text="No raw logger CSVs found in folder.")
+            detail = (
+                "No microSD logger CSVs found.\n\n"
+                "This folder may only contain prior combined outputs or unrelated CSVs.\n"
+                "Combined files (named like '00000018 2026-07-09 125259.csv') and files "
+                "without a 'Date-Time (UTC)' column are skipped automatically."
+            )
+            if skipped_combined or skipped_other:
+                detail += f"\n\nSkipped: {len(skipped_combined)} combined, {len(skipped_other)} other."
+            messagebox.showwarning("No Logger CSVs Found", detail)
 
     def run_process(self):
         if self._worker_running:
             return
-        if not self.selected_files:
-            messagebox.showwarning("Selection Missing", "Please select met data CSV files first.")
+        if not self.matched_files:
+            messagebox.showwarning(
+                "Missing Input",
+                "Please select a MET folder containing raw logger CSV files first."
+            )
             return
 
         site_name = self.var_site_name.get().strip()
-        deploy = self.var_deploy.get().strip()
         serial = self.var_serial.get().strip()
         deploy_tzone = self.var_tzone.get().strip()
         adjust_for_dst = self.var_dst.get()
 
-        output_dir_for_logs = os.path.dirname(self.selected_files[0])
-        files = list(self.selected_files)
+        output_dir = self.selected_folder
+        files = list(self.matched_files)
 
         self._worker_running = True
         self._set_busy(True)
@@ -391,27 +357,25 @@ class FeatherMCApp(tk.Tk):
 
         threading.Thread(
             target=self._run_worker,
-            args=(output_dir_for_logs, site_name, deploy, serial, deploy_tzone, adjust_for_dst, files),
+            args=(output_dir, site_name, serial, deploy_tzone, adjust_for_dst, files),
             daemon=True,
         ).start()
 
-    def _run_worker(self, output_dir, site_name, deploy, serial, deploy_tzone, adjust_for_dst, files):
+    def _run_worker(self, output_dir, site_name, serial, deploy_tzone, adjust_for_dst, files):
         logger = None
         n = len(files)
         total = n + 2
-
-        def progress(step, total, message):
-            self._on_ui(self._update_progress, step, total, message)
+        progress = self._make_progress_callback()
 
         try:
-            logger, log_path = setup_logger(output_dir, site_name, deploy, serial)
+            logger, log_path = setup_logger(output_dir, site_name, serial, self.selected_folder)
             logger.info(f"Time zone selected: {deploy_tzone} | adjust_for_dst={adjust_for_dst}")
 
             raw_data = read_and_combine_files(files, logger, progress_callback=progress)
             progress(n + 1, total, "Cleaning and converting timestamps…")
             clean_data = clean_and_format_data(raw_data, deploy_tzone, adjust_for_dst, logger)
             progress(n + 2, total, "Writing output…")
-            output_path = export_data(clean_data, files, serial, logger)
+            output_path = export_data(clean_data, output_dir, serial, logger)
 
             self._on_ui(self._on_success, output_path, log_path, n)
         except Exception as e:
@@ -443,12 +407,6 @@ class FeatherMCApp(tk.Tk):
             "FeatherMC Combine — Error",
             f"FeatherMC Wind Combiner failed:\n{error}"
         )
-
-    def _on_worker_done(self):
-        self._worker_running = False
-        self._set_busy(False)
-        if float(self.progress.cget("value")) < float(self.progress.cget("maximum")):
-            self._reset_progress()
 
 # ------------------------------------------------------------------------------
 # Entry Point

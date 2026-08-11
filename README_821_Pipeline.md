@@ -51,7 +51,7 @@ MORUA2503_20260626/
 └── RAW/        G4 export folder(s) with Time History CSVs
 ```
 
-Site name and deploy date in the folder name should match what you enter in the scripts.
+Site name and deploy date in the folder name should match what you enter in the scripts, when applicable. Folder layouts vary — e.g. `2026 DENATRLA Triple Lakes\01 DATA\MET` is fine; scripts log the folder path you selected.
 
 ## Step 0 — Download field data
 
@@ -77,10 +77,9 @@ More detail on field download: `README_DataDownload.md` (821 sections; ignore th
 python FeatherMC_combine.py
 ```
 
-1. Browse to `MET/` and select the wind CSV files (skip `.md` metadata files).  
-2. Enter site name, deploy date (`YYYYMMDD`), logger serial number, and local timezone.  
-3. Turn on DST adjustment if needed.  
-4. Run.
+1. Browse to your wind data folder (e.g. `01 DATA\MET` or wherever logger CSVs live). Raw logger CSVs are picked automatically; prior combined outputs are skipped.  
+2. Enter site name (optional, for the log), logger serial number, and local timezone. Turn on DST adjustment if needed.  
+3. Run.
 
 **Output:** one cleaned CSV in `MET/`, named like `00000018 2026-07-09 125259.csv`, plus a log file `feathermc_clean_*.log`.
 
@@ -92,8 +91,8 @@ Skip this step if you are not merging wind into NVSPL.
 python ld821_combine.py
 ```
 
-1. Browse to the deployment folder or `RAW/` — the script finds Time History CSVs in all subfolders.  
-2. Enter site name and deploy date.  
+1. Browse to your SPL data folder (e.g. `01 DATA\RAW` or wherever G4 Time History CSVs live).  
+2. Enter site name — used in the output filename (e.g. `DENATRLA_Time History.csv`).  
 3. Run.
 
 **Output:** `{site}_Time History.csv` and `combine_slm_*.log` in the folder you browsed to (not inside a subfolder). If files are found in multiple subfolders, you'll be asked to confirm before combining.
