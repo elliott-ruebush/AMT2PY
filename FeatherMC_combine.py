@@ -77,7 +77,12 @@ def setup_logger(output_dir: str, site_name: str, deploy: str, serial: str) -> l
     logger.info("----- FeatherMC wind clean prep run started -----")
     logger.info(f"Site: {site_name} | Deploy: {deploy} | Serial: {serial}")
     logger.info(f"Log file: {log_path}")
-    return logger
+    return logger, log_path
+
+def close_logger(logger: logging.Logger):
+    for handler in logger.handlers[:]:
+        handler.close()
+        logger.removeHandler(handler)
 
 def read_and_combine_files(file_paths, logger: logging.Logger) -> pd.DataFrame:
     if not file_paths:
@@ -190,6 +195,14 @@ class FeatherMCApp(tk.Tk):
         self.selected_files = []
         self._build_gui()
 
+    def _set_result(self, text, ok=None):
+        if ok is True:
+            self.lbl_result.config(text=text, foreground="#1a7f37")
+        elif ok is False:
+            self.lbl_result.config(text=text, foreground="#b42318")
+        else:
+            self.lbl_result.config(text=text, foreground="#666666")
+
     def _build_gui(self):
         main_frame = ttk.Frame(self, padding="12")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -270,8 +283,14 @@ class FeatherMCApp(tk.Tk):
         chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # --- Action Button ---
-        btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
-        btn_run.pack(fill=tk.X, pady=12)
+        self.btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
+        self.btn_run.pack(fill=tk.X, pady=(12, 4))
+
+        self.lbl_result = tk.Label(
+            main_frame, text="", justify=tk.LEFT, wraplength=520,
+            font=("Segoe UI", 9), foreground="#666666"
+        )
+        self.lbl_result.pack(fill=tk.X, pady=(0, 4))
 
     def browse_files(self):
         file_paths = filedialog.askopenfilenames(
@@ -284,6 +303,7 @@ class FeatherMCApp(tk.Tk):
             for f in self.selected_files:
                 self.lst_files.insert(tk.END, os.path.basename(f))
             self.lbl_file_count.config(text=f"{len(self.selected_files)} file(s) selected")
+            self._set_result("")
 
     def run_process(self):
         if not self.selected_files:
@@ -297,21 +317,37 @@ class FeatherMCApp(tk.Tk):
         adjust_for_dst = self.var_dst.get()
 
         output_dir_for_logs = os.path.dirname(self.selected_files[0])
+        logger = None
+
+        self.btn_run.config(state=tk.DISABLED, text="Processing…")
+        self._set_result("Working…")
+        self.update_idletasks()
 
         try:
-            logger = setup_logger(output_dir_for_logs, site_name, deploy, serial)
+            logger, log_path = setup_logger(output_dir_for_logs, site_name, deploy, serial)
             logger.info(f"Time zone selected: {deploy_tzone} | adjust_for_dst={adjust_for_dst}")
 
             raw_data = read_and_combine_files(self.selected_files, logger)
             clean_data = clean_and_format_data(raw_data, deploy_tzone, adjust_for_dst, logger)
             output_path = export_data(clean_data, self.selected_files, serial, logger)
 
+            self._set_result(
+                f"Done — combined {len(self.selected_files)} file(s)\n"
+                f"Output: {output_path}\n"
+                f"Log: {log_path}",
+                ok=True,
+            )
             messagebox.showinfo(
                 "Processing Complete",
                 f"Successfully combined {len(self.selected_files)} file(s).\n\nOutput saved to:\n{output_path}"
             )
         except Exception as e:
+            self._set_result(f"Failed — {e}", ok=False)
             messagebox.showerror("Execution Error", f"An error occurred while processing files:\n{e}")
+        finally:
+            if logger:
+                close_logger(logger)
+            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
 
 # ------------------------------------------------------------------------------
 # Entry Point

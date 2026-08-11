@@ -70,7 +70,12 @@ def setup_logger(output_dir: str, sitename: str, deploy: str) -> logging.Logger:
     logger.info("----- Combine SLM Time History run started -----")
     logger.info(f"Sitename: {sitename} | Deploy: {deploy}")
     logger.info(f"Log file: {log_path}")
-    return logger
+    return logger, log_path
+
+def close_logger(logger: logging.Logger):
+    for handler in logger.handlers[:]:
+        handler.close()
+        logger.removeHandler(handler)
 
 def find_time_column(df: pd.DataFrame) -> str:
     # First pass: columns that look like time/date/timestamp
@@ -95,7 +100,7 @@ def find_time_column(df: pd.DataFrame) -> str:
         return df.columns[1]
     return df.columns[0]
 
-def process_slm_files(selected_files: str, sitename: str, deploy: str, logger: logging.Logger):
+def process_slm_files(selected_files: list, sitename: str, deploy: str, logger: logging.Logger, output_dir: str):
     logger.info(f"Files matched Time History pattern: {len(selected_files)}")
     for f in selected_files:
         logger.info(f"  ✔ {f}")
@@ -127,8 +132,7 @@ def process_slm_files(selected_files: str, sitename: str, deploy: str, logger: l
     data = data.sort_values(by=time_col, kind='stable').reset_index(drop=True)
     logger.info("Data sorted by time column.")
 
-    # Output naming
-    output_dir = os.path.dirname(selected_files[0])
+    # Output naming — always write to the folder the user selected in the GUI
     base_fname = os.path.basename(selected_files[-1])
     standardized_fname = re.sub(
         r'Time History(?:\s*\d+)?\.csv$', 'Time History.csv',
@@ -156,6 +160,14 @@ class LD821CombineApp(tk.Tk):
         self.selected_folder = ""
         self.matched_files = []
         self._build_gui()
+
+    def _set_result(self, text, ok=None):
+        if ok is True:
+            self.lbl_result.config(text=text, foreground="#1a7f37")
+        elif ok is False:
+            self.lbl_result.config(text=text, foreground="#b42318")
+        else:
+            self.lbl_result.config(text=text, foreground="#666666")
 
     def _build_gui(self):
         main_frame = ttk.Frame(self, padding="12")
@@ -208,8 +220,14 @@ class LD821CombineApp(tk.Tk):
         ToolTip(lbl_deploy, hint_deploy)
 
         # --- Run Button ---
-        btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
-        btn_run.pack(fill=tk.X, pady=12)
+        self.btn_run = ttk.Button(main_frame, text="Combine and Process Files", command=self.run_process)
+        self.btn_run.pack(fill=tk.X, pady=(12, 4))
+
+        self.lbl_result = tk.Label(
+            main_frame, text="", justify=tk.LEFT, wraplength=520,
+            font=("Segoe UI", 9), foreground="#666666"
+        )
+        self.lbl_result.pack(fill=tk.X, pady=(0, 4))
 
     def browse_folder(self):
         folder = filedialog.askdirectory(title="Select High-Level Directory (RAW)")
@@ -219,6 +237,7 @@ class LD821CombineApp(tk.Tk):
         self.selected_folder = folder
         self.matched_files = []
         self.lst_files.delete(0, tk.END)
+        self._set_result("")
 
         # Recursively search for matching "Time History" CSV files
         for root, _, filenames in os.walk(folder):
@@ -249,18 +268,45 @@ class LD821CombineApp(tk.Tk):
         sitename = self.var_sitename.get().strip()
         deploy = self.var_deploy.get().strip()
 
-        output_dir = os.path.dirname(self.matched_files[0])
+        source_dirs = {os.path.dirname(f) for f in self.matched_files}
+        if len(source_dirs) > 1:
+            proceed = messagebox.askyesno(
+                "Multiple source folders",
+                f"Time History files were found in {len(source_dirs)} different subfolders.\n\n"
+                "Combining files from different exports is usually a mistake.\n\n"
+                "Continue anyway?"
+            )
+            if not proceed:
+                return
+
+        output_dir = self.selected_folder
+        logger = None
+
+        self.btn_run.config(state=tk.DISABLED, text="Processing…")
+        self._set_result("Working…")
+        self.update_idletasks()
 
         try:
-            logger = setup_logger(output_dir, sitename, deploy)
-            output_path = process_slm_files(self.matched_files, sitename, deploy, logger)
+            logger, log_path = setup_logger(output_dir, sitename, deploy)
+            output_path = process_slm_files(self.matched_files, sitename, deploy, logger, output_dir)
 
+            self._set_result(
+                f"Done — combined {len(self.matched_files)} file(s)\n"
+                f"Output: {output_path}\n"
+                f"Log: {log_path}",
+                ok=True,
+            )
             messagebox.showinfo(
                 "Processing Complete",
                 f"Successfully combined {len(self.matched_files)} file(s).\n\nOutput saved to:\n{output_path}"
             )
         except Exception as e:
+            self._set_result(f"Failed — {e}", ok=False)
             messagebox.showerror("Execution Error", f"An error occurred while combining files:\n{e}")
+        finally:
+            if logger:
+                close_logger(logger)
+            self.btn_run.config(state=tk.NORMAL, text="Combine and Process Files")
 
 # ------------------------------------------------------------------------------
 # Entry Point

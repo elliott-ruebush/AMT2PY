@@ -194,6 +194,7 @@ MET_CSV_PATH = "path/to/met.csv"
 - Optional: `tzdata` for timezone handling in the 831 NVSPL script on some platforms
 
 ```Shell
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 

@@ -27,6 +27,7 @@ source .venv/bin/activate
 Then install packages:
 
 ```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -91,11 +92,11 @@ Skip this step if you are not merging wind into NVSPL.
 python ld821_combine.py
 ```
 
-1. Browse to the deployment folder (or `RAW/` — the script searches recursively for Time History files).  
+1. Browse to the deployment folder or `RAW/` — the script finds Time History CSVs in all subfolders.  
 2. Enter site name and deploy date.  
 3. Run.
 
-**Output:** one sorted CSV in the same folder as the source files, named `{site}_Time History.csv`. This is a combined CSV, not a binary `.821` file. A log file `combine_slm_*.log` is written alongside it.
+**Output:** `{site}_Time History.csv` and `combine_slm_*.log` in the folder you browsed to (not inside a subfolder). If files are found in multiple subfolders, you'll get a warning before combining.
 
 ## Step 3 — Convert to NVSPL
 
