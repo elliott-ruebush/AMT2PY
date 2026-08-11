@@ -16,21 +16,21 @@ from shared_gui_components import (
     create_file_logger,
     close_logger,
 )
-from feathermc_met_schema import (
+from schemas.feathermc_met import (
     FEATHERMC_COMBINED_TIMESTAMP,
     FEATHERMC_WIND_GUST,
     is_feathermc_combined_header,
     infer_feathermc_met_gui_indices,
     feathermc_met_runtime_indices,
 )
-from ld821_spl_schema import (
+from schemas.ld821_spl import (
     LD821_COMBINED_BASENAME,
     LD821_HEADER_MARKER,
     LD821_TIMESTAMP_FMT,
     infer_spl_gui_defaults,
     validate_ld821_header,
 )
-from csv_schema_utils import header_columns, normalize_gui_path
+from schemas.utils import header_columns, normalize_gui_path
 
 # ==============================================================================
 # 1. CORE PROCESSING LOGIC (Preserved & Adapted for GUI Integration)

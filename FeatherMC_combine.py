@@ -18,8 +18,8 @@ from shared_gui_components import (
     create_file_logger,
     pack_combine_layout,
 )
-from feathermc_met_schema import FEATHERMC_COMBINED_TIMESTAMP, FEATHERMC_WIND_GUST
-from csv_schema_utils import normalize_gui_path
+from schemas.feathermc_met import FEATHERMC_COMBINED_TIMESTAMP, FEATHERMC_WIND_GUST
+from schemas.utils import normalize_gui_path
 
 # Timezone definitions
 COMMON_TZS = [

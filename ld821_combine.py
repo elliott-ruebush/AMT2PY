@@ -17,8 +17,8 @@ from shared_gui_components import (
     create_file_logger,
     pack_combine_layout,
 )
-from ld821_spl_schema import LD821_COMBINED_BASENAME, LD821_HEADER_MARKER
-from csv_schema_utils import normalize_gui_path
+from schemas.ld821_spl import LD821_COMBINED_BASENAME, LD821_HEADER_MARKER
+from schemas.utils import normalize_gui_path
 
 # Compile regex pattern to match: ...Time History[ optional number ].csv
 TIME_HISTORY_PATTERN = re.compile(r'Time History(?:\s*\d+)?\.csv$', re.IGNORECASE)

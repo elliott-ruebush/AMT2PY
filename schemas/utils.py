@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Shared helpers for CSV header / column index lookup."""
+"""Shared helpers for CSV header / column index lookup and GUI paths."""
 
 import os
 

@@ -5,7 +5,7 @@ import csv
 import os
 import re
 
-from csv_schema_utils import col_index, header_columns, normalize_gui_path
+from schemas.utils import col_index, header_columns, normalize_gui_path
 
 LD821_HEADER_MARKER = "Record Type"
 LD821_RECORD_TYPE = "Record Type"

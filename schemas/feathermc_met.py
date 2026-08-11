@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Exact column names for FeatherMC combined MET CSV (NVSPL merge contract)."""
 
-from csv_schema_utils import col_index, header_columns
+from schemas.utils import col_index, header_columns
 
 # Added by FeatherMC_combine.clean_and_format_data
 FEATHERMC_COMBINED_TIMESTAMP = "Date-Time (LOC)"

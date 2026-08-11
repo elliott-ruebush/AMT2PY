@@ -34,7 +34,7 @@ Column headers are **unchanged from G4 export** (passthrough). Expected layout:
 | 6–38 | `H12.5` … `H20000` (33 octave bands) |
 | 39 | `OVLD` |
 
-See `ld821_spl_schema.py` for the full column contract used by `ld821_to_nvspl.py`.
+See `schemas/ld821_spl.py` for the full column contract used by `ld821_to_nvspl.py`.
 
 ## Usage
 
