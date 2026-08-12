@@ -1,6 +1,8 @@
 # ld821_combine
 
-Combines G4-exported LD821 Time History CSVs into one sorted file for NVSPL conversion.
+Combines all SPL **Time History** files exported from **G4 Utility** into one sorted, analysis-ready CSV for the full deployment. Output uses standardized naming (site, deployment date, system, etc.).
+
+Part of the [821 pipeline](pipeline.md) — run after G4 export is in `RAW/`, before `ld821_to_nvspl.py`.
 
 ## Features
 
@@ -34,7 +36,7 @@ Column headers are **unchanged from G4 export** (passthrough). Expected layout:
 | 6–38 | `H12.5` … `H20000` (33 octave bands) |
 | 39 | `OVLD` |
 
-See `schemas/ld821_spl.py` for the full column contract used by `ld821_to_nvspl.py`.
+See `../../amt2py/schemas/ld821_spl.py` for the full column contract used by `ld821_to_nvspl.py`.
 
 ## Usage
 
@@ -45,7 +47,7 @@ See `schemas/ld821_spl.py` for the full column contract used by `ld821_to_nvspl.
 
 ## NVSPL handoff
 
-Browse the combined file in `ld821_to_nvspl.py` — **Site ID** and **Output folder** autofill from the `{site}_Time History.csv` filename.
+Browse the combined file in `ld821_to_nvspl.py` — **Site ID** autofill from the `{site}_Time History.csv` filename; **Output folder** defaults to deployment-level `NVSPL/` when the combined file is in `RAW/`.
 
 ## Troubleshooting
 

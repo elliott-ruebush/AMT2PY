@@ -1,8 +1,10 @@
 # LD821 to NVSPL (`ld821_to_nvspl.py`)
 
-Converts a combined LD821 Time History CSV to hourly **NVSPL** text files (54 columns) and optionally merges Feather MC wind data. The script opens a **Tkinter GUI** — configure fields in the window; there are no constants to edit in the source file.
+Converts combined SPL and MET data to hourly **NVSPL** text files (54 columns). Merges one-second SPL with wind data when MET merge is enabled. After creating NVSPL files, load them into **AMT** for final processing, graphing, and analysis.
 
-For the full 821 workflow (setup, folder layout, and step order), see **`README_821_Pipeline.md`**. Environment setup (clone, venv, dependencies) is in **`README.md`** → *Prepare Your Machine*.
+The script opens a **GUI** — configure fields in the window; there is nothing to edit in the source code before running.
+
+For the full 821 workflow (setup, folder layout, and step order), see [`pipeline.md`](pipeline.md). Environment setup (clone, venv, dependencies) is in [`README.md`](../../README.md) → *Prepare Your Machine*.
 
 ## Quick start
 
@@ -10,9 +12,9 @@ For the full 821 workflow (setup, folder layout, and step order), see **`README_
 python ld821_to_nvspl.py
 ```
 
-1. Browse to the combined SPL CSV from `ld821_combine.py` (e.g. `CARE001_Time History.csv`). **Site ID** and **Output folder** autofill from the filename and path (`schemas/ld821_spl.py`).
+1. Browse to the combined SPL CSV from `ld821_combine.py` (e.g. `CARE001_Time History.csv`). **Site ID** and **Output folder** autofill from the filename and path (`../../amt2py/schemas/ld821_spl.py`).
 2. Choose or confirm the output directory (e.g. a `NVSPL/` folder under the deployment).
-3. To merge wind: set **Merge MET Data** to `True`, browse to the cleaned MET CSV from `FeatherMC_combine.py`. Column indices autofill from the header (`schemas/feathermc_met.py`).
+3. To merge wind: set **Merge MET Data** to `True`, browse to the cleaned MET CSV from `FeatherMC_combine.py`. Column indices autofill from the header (`../../amt2py/schemas/feathermc_met.py`).
 4. Click **Run Conversion Process**. Progress and merge details appear in the log window.
 
 **Output:** one file per hour: `NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt` (3600 one-second rows).
@@ -60,7 +62,7 @@ NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt
 | Field | Description |
 |-------|-------------|
 | **Input SPL CSV** | Combined Time History file from step 2 of the pipeline. |
-| **Output Folder** | Directory for hourly `.txt` files. Autofill suggests the SPL file’s folder or an existing `NVSPL/` subfolder. |
+| **Output Folder** | Directory for hourly `.txt` files. Autofill suggests `NVSPL/` beside `RAW/` when the input CSV is in `RAW/`; otherwise `NVSPL/` beside the CSV. Folder is created on Run if missing. |
 | **Site ID** | Monitoring site code (e.g. `CARE001`). Autofill parses the filename prefix before `_Time History`. |
 
 ### MET (wind) merge
@@ -86,7 +88,7 @@ NVSPL_{SITE}_{YYYY_MM_DD_HH}.txt
 | **Convert MPH to MPS** | `False` | Set `True` if MET wind speed is in mph. |
 | **Invalid Speed Entries** | `39.9` | Comma-separated sentinel values blanked in output (common logger error code). |
 
-Column autofill uses exact header names in `schemas/feathermc_met.py`. If you use a non-Feather MET file, enter column indices manually.
+Column autofill uses exact header names in `../../amt2py/schemas/feathermc_met.py`. If you use a non-Feather MET file, enter column indices manually.
 
 ---
 
@@ -142,8 +144,8 @@ MET sample interval
 
 | Topic | File |
 |-------|------|
-| End-to-end 821 workflow | `README_821_Pipeline.md` |
-| Combine Time History CSVs | `README_ld821_combine.md` |
-| Combine Feather MC wind | `README_FeatherMC_combine.md` |
-| SPL filename / site autofill | `schemas/ld821_spl.py` |
-| MET column names for autofill | `schemas/feathermc_met.py` |
+| End-to-end 821 workflow | [`pipeline.md`](pipeline.md) |
+| Combine Time History CSVs | [`ld821-combine.md`](ld821-combine.md) |
+| Combine Feather MC wind | [`feathermc-combine.md`](feathermc-combine.md) |
+| SPL filename / site autofill | `../../amt2py/schemas/ld821_spl.py` |
+| MET column names for autofill | `../../amt2py/schemas/feathermc_met.py` |

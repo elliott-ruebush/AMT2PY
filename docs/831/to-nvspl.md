@@ -1,8 +1,12 @@
 # 831 → NVSPL Converter (with External Wind Merge)
 
-Converts Larson Davis **.831** files (both legacy `LD831` and new `NPSLD831`) into **NVSPL hourly `.txt` files**, and optionally merges **external wind** measurements from a CSV (MET log). The converter parses audio and scalar metrics, aligns timestamps to the **filename anchor**, buckets rows by hour, and writes per‑hour NVSPL outputs.
+Converts Larson Davis **.831** files (legacy `LD831` and new `NPSLD831`) to hourly **NVSPL** `.txt` files. Optionally merges external wind from a CSV (bin-repeat, forward-fill, or nearest-neighbor).
 
-> Implements robust LD831 parsing (legacy and new formats) and flexible MET merge: encoding/delimiter sniff, tolerant datetime parsing (AM/PM, ISO), and explicit **bin‑repeat** across 1‑second NVSPL records. Includes diagnostics on MET load stats, time ranges, inferred sample interval, and merge counts.
+**Before running:** edit path settings at the top of `831_to_NVSPL_external_wind_log.py` (`INPUT_PATH`, `OUTPUT_PATH`, `MERGE_MET`, `MET_CSV_PATH`). See [Configuration](#configuration-edit-constants-at-the-top-of-the-script) below for all options.
+
+Part of the [831 workflow](README.md) — typically run after `831Renamer.py`.
+
+> Parses legacy and new LD831 formats, aligns timestamps to the filename when possible, and prints diagnostics on MET load and merge counts.
 
 ---
 
@@ -18,14 +22,14 @@ Converts Larson Davis **.831** files (both legacy `LD831` and new `NPSLD831`) in
 
 ## Requirements
 
-- **Python 3.9+** (uses `zoneinfo` when `LD_TZ` / `MET_TZ` are set; otherwise standard library only).
-- No extra packages beyond the repo **`requirements.txt`** (`tzdata` covers named timezones on Windows). 831-only: you can skip `pip install` if you are not using timezone constants and do not need 821 dependencies.
+- **Python 3.9+**
+- Install packages from **`requirements.txt`** (see [`README.md`](../../README.md) → *Prepare Your Machine*).
 
 ---
 
 ## Configuration (edit constants at the top of the script)
 
-Open `831_to_NVSPL_external_wind_log.py` and adjust these values:
+Open `831_to_NVSPL_external_wind_log.py` and adjust these values at the top of the file:
 
 ```python
 # Input/Output

@@ -53,4 +53,4 @@ G4 Utility organizes exports under the PC by meter serial number, then by deploy
 - **Serial number folder** — all downloads for that LD821 unit
 - **Deployment date folder** — one deployment’s CSV set (OBA, Session Log, Settings, Summary, Time History)
 
-Copy the **deployment date folder** (the one that contains the Time History CSVs) into your deployment’s `RAW/` directory. Do **not** use a separate `SPL/` folder — older docs sometimes used that name; the standard layout for this repo is `RAW/` (see `README_821_Pipeline.md`).
+Copy the **deployment date folder** (the one that contains the Time History CSVs) into your deployment’s `RAW/` directory. Do **not** use a separate `SPL/` folder — older docs sometimes used that name; the standard layout for this repo is `RAW/` (see [`pipeline.md`](pipeline.md)).

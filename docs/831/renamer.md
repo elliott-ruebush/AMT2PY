@@ -1,6 +1,8 @@
-# LD831Renamer (Python CLI)
+# 831Renamer (`831Renamer.py`)
 
 A Python command-line tool that **discovers logger subfolders**, **merges** `OverAll`, `SLog`, and `THist` into a single `.831` file (with the `NPSLD831` header + offsets), and **renames** the output to `SPL_<SITE>_<yyyy_MM_dd_HHmmss>.831` **two levels above** the `THist` folder. Optionally, it can **adjust internal timestamps** in all time‑history records to align with a new date.
+
+Part of the [831 workflow](README.md). Setup: [`README.md`](../../README.md) → *Prepare your machine*.
 
 > This is a Python port of the original WinForms C# utility (`LD831Renamer.cs` + `.designer.cs`) and mirrors its core behavior.
 
@@ -13,16 +15,6 @@ A Python command-line tool that **discovers logger subfolders**, **merges** `Ove
 - 🏷️ **Auto-rename** to `SPL_<SITE>_<timestamp>.831` in the **grandparent directory** of `THist`.
 - ⏱️ **Optional timestamp adjustment**: shift per-record timestamps by a computed offset based on a user-specified new date.
 - 🧪 **Dry-run mode**: preview planned actions without writing or moving files.
-
----
-
-## Installation
-
-Uses **only Python’s standard library** — no extra packages. Clone and venv setup: **`README.md`** → *Prepare Your Machine* (skip `pip install` if you are only running 831 scripts).
-
-```bash
-python --version   # 3.9+
-```
 
 ---
 
@@ -98,4 +90,3 @@ This project is in the worldwide public domain:
 >
 > All contributions to this project will be released under the CC0 dedication.
 > By submitting a pull request, you are agreeing to comply with this waiver of copyright interest.
-
