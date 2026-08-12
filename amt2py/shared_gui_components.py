@@ -6,7 +6,7 @@ from logging import Formatter, StreamHandler, FileHandler
 import tkinter as tk
 from tkinter import ttk
 
-from schemas.utils import normalize_gui_path
+from amt2py.schemas.utils import normalize_gui_path
 
 
 class ToolTip:

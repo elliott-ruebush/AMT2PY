@@ -11,12 +11,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from schemas.feathermc_met import (
+from amt2py.schemas.feathermc_met import (
     feathermc_met_runtime_indices,
     fuzzy_met_column_indices,
     infer_feathermc_met_gui_indices,
 )
-from schemas.ld821_spl import (
+from amt2py.schemas.ld821_spl import (
     ld821_csv_header_line_index,
     validate_ld821_header,
 )
@@ -54,6 +54,27 @@ class SchemaRegressionTests(unittest.TestCase):
         gui = infer_feathermc_met_gui_indices(hdr)
         self.assertEqual(gui["MET_WINDSPD_IDX"], "2")
         self.assertEqual(gui["MET_TIMESTAMP_IDX"], "3")
+
+    def test_nvspl_output_dir_from_raw(self):
+        from amt2py.schemas.ld821_spl import _infer_nvspl_output_dir
+
+        with tempfile.TemporaryDirectory() as root:
+            raw = os.path.join(root, "RAW")
+            os.makedirs(raw)
+            csv_path = os.path.join(raw, "PARK001_Time History.csv")
+            open(csv_path, "w").close()
+            out = _infer_nvspl_output_dir(csv_path)
+            self.assertTrue(out.replace("\\", "/").endswith("/NVSPL") or out.endswith("NVSPL"))
+            self.assertEqual(os.path.dirname(out), root)
+
+    def test_nvspl_output_dir_at_deployment_root(self):
+        from amt2py.schemas.ld821_spl import _infer_nvspl_output_dir
+
+        with tempfile.TemporaryDirectory() as root:
+            csv_path = os.path.join(root, "PARK001_Time History.csv")
+            open(csv_path, "w").close()
+            out = _infer_nvspl_output_dir(csv_path)
+            self.assertEqual(os.path.normpath(out), os.path.normpath(os.path.join(root, "NVSPL")))
 
     def test_ld821_preamble_skip_index(self):
         with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as f:

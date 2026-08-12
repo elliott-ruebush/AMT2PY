@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Pipeline CSV column contracts and shared GUI path helpers."""
 
-from schemas.utils import col_index, header_columns, normalize_gui_path
-from schemas.feathermc_met import (
+from amt2py.schemas.utils import col_index, header_columns, normalize_gui_path
+from amt2py.schemas.feathermc_met import (
     FEATHERMC_ADDED_COLUMNS,
     FEATHERMC_COMBINED_TIMESTAMP,
     FEATHERMC_TEMP,
@@ -13,7 +13,7 @@ from schemas.feathermc_met import (
     infer_feathermc_met_gui_indices,
     is_feathermc_combined_header,
 )
-from schemas.ld821_spl import (
+from amt2py.schemas.ld821_spl import (
     LD821_BAND_COLUMNS,
     LD821_COMBINED_BASENAME,
     LD821_HEADER_MARKER,

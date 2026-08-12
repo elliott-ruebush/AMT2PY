@@ -5,7 +5,7 @@ import csv
 import os
 import re
 
-from schemas.utils import col_index, header_columns, normalize_gui_path
+from amt2py.schemas.utils import col_index, header_columns, normalize_gui_path
 
 LD821_HEADER_MARKER = "Record Type"
 LD821_RECORD_TYPE = "Record Type"
@@ -123,17 +123,29 @@ def parse_site_from_combined_spl_filename(path):
     return match.group(1).strip() if match else ""
 
 
+def _infer_nvspl_output_dir(csv_path):
+    """Suggest NVSPL output folder; create-on-run via ensure_dir in NVSPL GUI."""
+    csv_dir = os.path.dirname(os.path.abspath(csv_path))
+    if os.path.basename(csv_dir).upper() == "RAW":
+        preferred = os.path.join(os.path.dirname(csv_dir), "NVSPL")
+    else:
+        preferred = os.path.join(csv_dir, "NVSPL")
+
+    # Honor prior runs that wrote under RAW/NVSPL before this convention.
+    legacy = os.path.join(csv_dir, "NVSPL")
+    if legacy != preferred and os.path.isdir(legacy) and not os.path.isdir(preferred):
+        return legacy
+    return preferred
+
+
 def infer_spl_gui_defaults(csv_path):
     """SITE_ID and OUTPUT_DIR hints when browsing combined SPL in NVSPL GUI."""
     site = parse_site_from_combined_spl_filename(csv_path)
     if not site:
         return {}
-    csv_dir = os.path.dirname(os.path.abspath(csv_path))
-    nvspl_dir = os.path.join(csv_dir, "NVSPL")
-    output_dir = nvspl_dir if os.path.isdir(nvspl_dir) else csv_dir
     return {
         "SITE_ID": site,
-        "OUTPUT_DIR": normalize_gui_path(output_dir),
+        "OUTPUT_DIR": normalize_gui_path(_infer_nvspl_output_dir(csv_path)),
     }
 
 

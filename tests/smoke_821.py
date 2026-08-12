@@ -61,7 +61,7 @@ def _install_import_stubs():
     tk.filedialog = filedialog
     tk.messagebox = messagebox
 
-    sgc = types.ModuleType("shared_gui_components")
+    sgc = types.ModuleType("amt2py.shared_gui_components")
     sgc.ToolTip = type("ToolTip", (), {})
     sgc.WorkerGuiMixin = _Mixin
     sgc.add_progress_bar = lambda *a, **k: None
@@ -75,15 +75,15 @@ def _install_import_stubs():
         "tkinter.ttk": ttk,
         "tkinter.filedialog": filedialog,
         "tkinter.messagebox": messagebox,
-        "shared_gui_components": sgc,
+        "amt2py.shared_gui_components": sgc,
     })
 
 
 _install_import_stubs()
 
 from tests.fixtures import write_combine_parts, write_met_csv, write_spl_csv
-import ld821_combine
-import ld821_to_nvspl as nvspl
+import amt2py.ld821_combine as ld821_combine
+import amt2py.ld821_to_nvspl as nvspl
 
 SITE = "PARK001"
 SPL_SECONDS = 7200  # 2 hours of 1 Hz data
