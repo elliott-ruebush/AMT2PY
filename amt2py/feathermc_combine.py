@@ -31,10 +31,13 @@ from amt2py.timezone_utils import (
 
 TIMEZONE_LIST = build_timezone_list()
 
-# Shown under the DST checkbox (checked vs unchecked behavior in one line).
+# Shown under the DST checkbox.
+DST_CHECKBOX_LABEL = "Use daylight saving time zone rules when converting UTC to local"
 DST_RULES_HINT = (
-    "When on: local time follows the zone calendar (including DST). "
-    "When off: fixed UTC offset from deployment start (no DST changes)."
+    "When on: UTC timestamps are localized using the zone’s DST rules "
+    "(different UTC offsets apply if the deployment crosses a DST boundary). "
+    "When off: all UTC timestamps are localized using the local offset from "
+    "the UTC timestamp at the start of the deployment."
 )
 
 # Combined output from this script: "{serial} {YYYY-MM-DD HHMMSS}.csv"
@@ -283,7 +286,7 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         self.var_dst = tk.BooleanVar(value=True)
         chk_dst = ttk.Checkbutton(
             grp_tz,
-            text="Apply time zone rules (DST when this zone uses it)",
+            text=DST_CHECKBOX_LABEL,
             variable=self.var_dst,
         )
         chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
@@ -292,16 +295,11 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
             text=DST_RULES_HINT,
             font=("Segoe UI", 9),
             foreground="#444444",
-            wraplength=480,
+            wraplength=520,
             justify=tk.LEFT,
         )
         lbl_dst_hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
-        ToolTip(
-            chk_dst,
-            "Default (checked): IANA rules for the selected zone. "
-            "Unchecked: offset is taken from the earliest UTC timestamp in the combined data "
-            "and held for every row — use when field clocks did not change at a DST boundary.",
-        )
+        ToolTip(chk_dst, DST_RULES_HINT)
         ToolTip(lbl_dst_hint, DST_RULES_HINT)
 
     def browse_folder(self):
