@@ -35,7 +35,7 @@ TIMEZONE_LIST = build_timezone_list()
 DST_CHECKBOX_LABEL = "Use daylight saving time zone rules when converting UTC to local"
 DST_RULES_HINT = (
     "When on: UTC timestamps are localized using the zone’s DST rules "
-    "(different UTC offsets apply if the deployment crosses a DST boundary)."
+    "(different UTC offsets apply if the deployment crosses a DST boundary). "
     "This can lead to missing or repeated local timestamps if the deployment crosses a DST boundary."
     "When off: all UTC timestamps are localized using the local offset from "
     "the UTC timestamp at the start of the deployment."
