@@ -33,13 +33,19 @@ TIMEZONE_LIST = build_timezone_list()
 
 # Shown under the DST checkbox.
 DST_CHECKBOX_LABEL = "Use daylight saving time zone rules when converting UTC to local"
-DST_RULES_HINT = (
+DST_RULES_HINT_ON = (
     "When on: UTC timestamps are localized using the zone’s DST rules "
     "(different UTC offsets apply if the deployment crosses a DST boundary). "
-    "This can lead to missing or repeated local timestamps if the deployment crosses a DST boundary.\n"
+    "This can lead to missing or repeated local timestamps if the deployment crosses a DST boundary."
+)
+DST_RULES_HINT_OFF = (
     "When off: all UTC timestamps are localized using the local offset from "
     "the UTC timestamp at the start of the deployment."
 )
+
+
+def _dst_rules_hint_full() -> str:
+    return f"{DST_RULES_HINT_ON}\n{DST_RULES_HINT_OFF}"
 
 # Combined output from this script: "{serial} {YYYY-MM-DD HHMMSS}.csv"
 COMBINED_OUTPUT_PATTERN = re.compile(
@@ -207,8 +213,8 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("FeatherMC Wind Data Combination Tool")
-        self.geometry("560x600")
-        self.minsize(480, 480)
+        self.geometry("560x640")
+        self.minsize(480, 520)
         self.resizable(True, True)
 
         self.selected_folder = ""
@@ -291,24 +297,43 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
             variable=self.var_dst,
         )
         chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        lbl_dst_hint = ttk.Label(
+        hint_font = ("Segoe UI", 9)
+        hint_fg = "#444444"
+        hint_bg = ttk.Style().lookup("TLabelframe", "background") or self.cget("bg")
+        lbl_dst_hint_on = tk.Label(
             grp_tz,
-            text=DST_RULES_HINT,
-            font=("Segoe UI", 9),
-            foreground="#444444",
+            text=DST_RULES_HINT_ON,
+            font=hint_font,
+            fg=hint_fg,
+            bg=hint_bg,
+            anchor="w",
             justify=tk.LEFT,
         )
-        lbl_dst_hint.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        lbl_dst_hint_on.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        lbl_dst_hint_off = tk.Label(
+            grp_tz,
+            text=DST_RULES_HINT_OFF,
+            font=hint_font,
+            fg=hint_fg,
+            bg=hint_bg,
+            anchor="w",
+            justify=tk.LEFT,
+        )
+        lbl_dst_hint_off.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 0))
 
         def _sync_dst_hint_wrap(_event=None):
             width = grp_tz.winfo_width()
             if width > 1:
-                lbl_dst_hint.configure(wraplength=max(width - 24, 240))
+                wrap = max(width - 24, 240)
+                lbl_dst_hint_on.configure(wraplength=wrap)
+                lbl_dst_hint_off.configure(wraplength=wrap)
 
         grp_tz.bind("<Configure>", _sync_dst_hint_wrap, add="+")
         self.after_idle(_sync_dst_hint_wrap)
-        ToolTip(chk_dst, DST_RULES_HINT)
-        ToolTip(lbl_dst_hint, DST_RULES_HINT)
+        dst_hint_full = _dst_rules_hint_full()
+        ToolTip(chk_dst, dst_hint_full)
+        ToolTip(lbl_dst_hint_on, dst_hint_full)
+        ToolTip(lbl_dst_hint_off, dst_hint_full)
 
     def browse_folder(self):
         if self._worker_running:
