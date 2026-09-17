@@ -31,6 +31,12 @@ from amt2py.timezone_utils import (
 
 TIMEZONE_LIST = build_timezone_list()
 
+# Shown under the DST checkbox (checked vs unchecked behavior in one line).
+DST_RULES_HINT = (
+    "When on: local time follows the zone calendar (including DST). "
+    "When off: fixed UTC offset from deployment start (no DST changes)."
+)
+
 # Combined output from this script: "{serial} {YYYY-MM-DD HHMMSS}.csv"
 COMBINED_OUTPUT_PATTERN = re.compile(
     r'^\d+\s+\d{4}-\d{2}-\d{2}\s+\d{6}\.csv$', re.IGNORECASE
@@ -277,16 +283,26 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         self.var_dst = tk.BooleanVar(value=True)
         chk_dst = ttk.Checkbutton(
             grp_tz,
-            text="Apply time zone rules (including DST when this zone uses it)",
+            text="Apply time zone rules (DST when this zone uses it)",
             variable=self.var_dst,
         )
         chk_dst.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        dst_hint = (
-            "Checked (default): use IANA rules for the selected zone, including DST when observed. "
-            "Unchecked: manual override — fixed UTC offset from the start of the deployment "
-            "(earliest UTC in the combined data); DST transitions after that are not applied."
+        lbl_dst_hint = ttk.Label(
+            grp_tz,
+            text=DST_RULES_HINT,
+            font=("Segoe UI", 9),
+            foreground="#444444",
+            wraplength=480,
+            justify=tk.LEFT,
         )
-        ToolTip(chk_dst, dst_hint)
+        lbl_dst_hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ToolTip(
+            chk_dst,
+            "Default (checked): IANA rules for the selected zone. "
+            "Unchecked: offset is taken from the earliest UTC timestamp in the combined data "
+            "and held for every row — use when field clocks did not change at a DST boundary.",
+        )
+        ToolTip(lbl_dst_hint, DST_RULES_HINT)
 
     def browse_folder(self):
         if self._worker_running:
