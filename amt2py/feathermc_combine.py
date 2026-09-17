@@ -35,7 +35,8 @@ TIMEZONE_LIST = build_timezone_list()
 DST_CHECKBOX_LABEL = "Use daylight saving time zone rules when converting UTC to local"
 DST_RULES_HINT = (
     "When on: UTC timestamps are localized using the zone’s DST rules "
-    "(different UTC offsets apply if the deployment crosses a DST boundary). "
+    "(different UTC offsets apply if the deployment crosses a DST boundary)."
+    "This can lead to missing or repeated local timestamps if the deployment crosses a DST boundary."
     "When off: all UTC timestamps are localized using the local offset from "
     "the UTC timestamp at the start of the deployment."
 )
@@ -283,7 +284,7 @@ class FeatherMCApp(WorkerGuiMixin, tk.Tk):
         cmb_tz.grid(row=0, column=1, sticky="ew", padx=5, pady=4)
         grp_tz.columnconfigure(1, weight=1)
 
-        self.var_dst = tk.BooleanVar(value=True)
+        self.var_dst = tk.BooleanVar(value=False)
         chk_dst = ttk.Checkbutton(
             grp_tz,
             text=DST_CHECKBOX_LABEL,

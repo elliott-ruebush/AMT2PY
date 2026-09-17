@@ -33,7 +33,7 @@ Full SOP: [`data-download.md`](data-download.md). Summary:
 
 This step can be skipped if you are not merging wind data into the NVSPL files. However, it's recommended to include the wind data in the NVSPL files for convenience if you have it available.
 
-Combines **Feather MC** wind logger CSVs; converts UTC → local time using the deployment IANA zone. **Zone rules (including DST) are on by default**; unchecking the box applies a fixed UTC offset from deployment start (earliest UTC in the data), which matches field practice when clocks do not change at DST boundaries. The combobox lists curated US zones first (Denver, Phoenix, Shiprock for Navajo Nation, etc.). The run log records UTC/local ranges, any DST transitions inside the data, and warnings for duplicate `Date-Time (LOC)` strings that can affect NVSPL wind merge.
+Combines **Feather MC** wind logger CSVs; converts UTC → local time using the deployment IANA zone. **By default**, local times use a fixed UTC offset from deployment start (earliest UTC in the data); checking the daylight saving time zone rules box applies IANA DST instead. When the deployment does not cross a DST boundary, the two settings match. The combobox lists curated US zones first (Denver, Phoenix, Shiprock for Navajo Nation, etc.). The run log records UTC/local ranges, any DST transitions inside the data, and warnings for duplicate `Date-Time (LOC)` strings that can affect NVSPL wind merge.
 
 ```bash
 python FeatherMC_combine.py

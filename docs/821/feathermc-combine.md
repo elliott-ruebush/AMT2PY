@@ -10,7 +10,7 @@ Part of the [821 pipeline](pipeline.md) — optional step before `ld821_to_nvspl
 - Skips prior combined outputs and non-logger CSVs
 - Deployment time zone picker (US zones curated at top of list)
 - Cleans repeated headers
-- UTC to local conversion with zone rules (DST) by default
+- UTC to local conversion using fixed offset from deployment start by default (optional zone DST rules)
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ Part of the [821 pipeline](pipeline.md) — optional step before `ld821_to_nvspl
 1. Run `python FeatherMC_combine.py`
 2. Browse to the MET folder
 3. Enter **Serial Number** (autofill from Feather MC `*MD.CSV` metadata, or type manually), **Site ID**, and **Deployment Time Zone** (site and time zone may autofill when you browse the MET folder)
-4. Leave **Apply time zone rules** checked unless you need a fixed offset from deployment start (see below)
+4. Check **Use daylight saving time zone rules…** only if local times should follow the zone calendar across a DST boundary (see below); the default keeps one UTC offset from deployment start
 5. Run combine
 
 ## Configurable settings
@@ -42,8 +42,8 @@ Part of the [821 pipeline](pipeline.md) — optional step before `ld821_to_nvspl
 | Site name | `PARK001` | Optional log metadata |
 | Serial | from `*MD.CSV` or user | Output filename prefix; first line `Anemometer MetaData Log, {serial}` |
 | Time zone | `America/Denver` | IANA name; US list starts with New York, Chicago, Denver, **Phoenix**, **Shiprock** (Navajo Nation — DST inside Arizona), Los Angeles, Anchorage, Honolulu, then all other pytz zones |
-| Apply time zone rules | **On** | Uses IANA rules including DST when the zone observes it |
-| Uncheck rules | — | **Manual override**: fixed UTC offset from the **start** of the deployment (earliest UTC in the combined data). Use when field clocks stayed on the offset at deployment start across a DST change (e.g. SLM not updated). Does not duplicate or skip local hours at transitions. |
+| Use daylight saving time zone rules | **Off** | **Default**: fixed UTC offset from deployment start (earliest UTC in the combined data). Same result as zone rules when the deployment does not cross DST. |
+| Turn rules on | — | Local times follow IANA rules including DST when the zone observes it. Use when wall-clock / zone DST should apply across the deployment (may duplicate local hours at fall-back). |
 
 ### Phoenix vs Denver vs Shiprock
 
@@ -62,6 +62,6 @@ If duplicate **local** timestamps remain with **zone rules on** (log warns with 
 ## Troubleshooting
 
 - **No logger CSVs found** — folder may only contain prior combined outputs; check that raw microSD exports have `Date-Time (UTC)` and not `Date-Time (LOC)`
-- **Wrong times in NVSPL** — confirm deployment zone (Phoenix vs Shiprock vs Denver), ensure zone rules are on unless you intentionally use fixed offset from deployment start, then re-run Feather MC combine and NVSPL
+- **Wrong times in NVSPL** — confirm deployment zone (Phoenix vs Shiprock vs Denver). Default is fixed offset from deployment start; turn on daylight saving time zone rules only if the deployment should follow zone DST, then re-run Feather MC combine and NVSPL
 - **ST/DST mix in log** — expected when data span a transition with zone rules on; verify the selected zone
 - **Duplicate LOC warnings** — see above; fix zone/override or accept risk for NVSPL merge
